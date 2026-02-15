@@ -1,0 +1,21 @@
+{
+  "name": "@secureclaw/bridge-telegram",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch & node --watch dist/index.js",
+    "clean": "rimraf dist",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@secureclaw/shared": "*",
+    "grammy": "^1.31.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.7.0"
+  }
+}
