@@ -40,8 +40,13 @@ mounts:
     containerPath: /sandbox
     readOnly: false
 
-# Action tiers — used in Phase 3 for HITL approval gates.
-# Defined here to establish the schema; all tools run immediately in Phase 2.
+# Action tiers — Phase 3 HITL approval gates.
+# Classification is code-only; the LLM never sees these tiers.
+# Rules are checked in order: autoApprove → notify → requireApproval.
+# If no rule matches, the default is requireApproval (fail-safe).
+#
+# Condition keys MUST match the tool input field names exactly
+# (e.g., 'path', 'working_directory', 'command').
 actionTiers:
   autoApprove:
     - tool: read_file
@@ -49,17 +54,17 @@ actionTiers:
     - tool: search_files
     - tool: run_shell_command
       conditions:
-        workingDirectory: /sandbox/*
+        working_directory: /sandbox/**
 
   notify:
     - tool: write_file
       conditions:
-        path: /sandbox/*
+        path: /sandbox/**
 
   requireApproval:
     - tool: write_file
       conditions:
-        path: "!(/sandbox/*)"    # Anywhere outside sandbox
+        path: "!(/sandbox/**)"    # Anywhere outside sandbox
     - tool: run_shell_command
       conditions:
-        workingDirectory: "!(/sandbox/*)"
+        working_directory: "!(/sandbox/**)"

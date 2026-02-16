@@ -3,12 +3,26 @@
  *
  * Connects to Telegram via grammY (long polling) and forwards
  * allowed messages to the Gateway over a Unix domain socket.
+ *
+ * Phase 3: Added support for:
+ * - Inline keyboard buttons for HITL approval requests
+ * - Callback query handling for Approve/Reject decisions
+ * - Notification messages for 'notify' tier actions
+ * - Approval expiry message editing
  */
 
-import { Bot } from 'grammy';
+import { Bot, InlineKeyboard } from 'grammy';
 import { randomUUID } from 'node:crypto';
 import { SocketClient } from '@secureclaw/shared';
-import type { Message, SocketRequest, SocketResponse } from '@secureclaw/shared';
+import type {
+  Message,
+  SocketRequest,
+  SocketResponse,
+  ApprovalRequest,
+  ApprovalDecision,
+  BridgeNotification,
+  ApprovalExpired,
+} from '@secureclaw/shared';
 
 // ---------------------------------------------------------------------------
 // Environment validation
@@ -43,6 +57,19 @@ interface PendingRequest {
 }
 
 const pendingRequests: Map<string, PendingRequest> = new Map();
+
+// ---------------------------------------------------------------------------
+// Approval message tracking
+// Maps approval IDs to their Telegram message details so we can edit them later
+// ---------------------------------------------------------------------------
+
+interface ApprovalMessageRef {
+  chatId: string;
+  messageId: number;
+}
+
+const approvalMessages: Map<string, ApprovalMessageRef> = new Map();
+const resolvedApprovals: Set<string> = new Set();
 
 // ---------------------------------------------------------------------------
 // Initialize bot and socket client
@@ -113,14 +140,217 @@ bot.on('message:text', async (ctx) => {
 });
 
 // ---------------------------------------------------------------------------
-// Handle socket responses from gateway
+// Handle callback queries (inline button presses for approvals)
+// ---------------------------------------------------------------------------
+
+bot.on('callback_query:data', async (ctx) => {
+  const userId = ctx.from.id.toString();
+
+  // Security: re-check the allowlist for callback queries.
+  // Answer silently to avoid confirming the bot's presence or the allowlist.
+  if (!ALLOWED_USER_IDS.has(userId)) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  const data = ctx.callbackQuery.data;
+  const colonIndex = data.indexOf(':');
+
+  if (colonIndex === -1) {
+    await ctx.answerCallbackQuery({ text: 'Invalid action' });
+    return;
+  }
+
+  const action = data.slice(0, colonIndex);
+  const approvalId = data.slice(colonIndex + 1);
+
+  if (action !== 'approve' && action !== 'reject') {
+    await ctx.answerCallbackQuery({ text: 'Invalid action' });
+    return;
+  }
+
+  // Check if this approval has already been resolved
+  if (resolvedApprovals.has(approvalId)) {
+    await ctx.answerCallbackQuery({ text: '⏰ This approval has already been processed' });
+    return;
+  }
+
+  const decision: 'approved' | 'rejected' = action === 'approve' ? 'approved' : 'rejected';
+
+  // Send the decision to the gateway
+  const approvalDecision: ApprovalDecision = {
+    type: 'approval-decision',
+    approvalId,
+    decision,
+  };
+
+  if (socketClient.connected) {
+    socketClient.send(approvalDecision);
+    console.log(`[bridge-telegram] Sent approval decision: ${approvalId} → ${decision}`);
+  } else {
+    await ctx.answerCallbackQuery({ text: '⚠️ Not connected to gateway. Please try again.' });
+    return;
+  }
+
+  // Mark as resolved
+  resolvedApprovals.add(approvalId);
+  approvalMessages.delete(approvalId);
+
+  // Edit the original message to show the decision (remove buttons)
+  const statusEmoji = decision === 'approved' ? '✅' : '❌';
+  const statusText = decision === 'approved' ? 'Approved' : 'Rejected';
+
+  try {
+    const originalText = ctx.callbackQuery.message?.text ?? '';
+    await ctx.editMessageText(
+      `${originalText}\n\n${statusEmoji} ${statusText}`,
+    );
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to edit approval message:`, error.message);
+  }
+
+  await ctx.answerCallbackQuery({ text: `${statusEmoji} ${statusText}` });
+});
+
+// ---------------------------------------------------------------------------
+// Handle socket messages from gateway
 // ---------------------------------------------------------------------------
 
 socketClient.on('message', async (data: unknown) => {
-  const response = data as SocketResponse;
+  const raw = data as Record<string, unknown>;
 
+  // Route based on message type
+  switch (raw['type']) {
+    case 'approval-request':
+      await handleApprovalRequest(data as ApprovalRequest);
+      return;
+
+    case 'notification':
+      await handleNotification(data as BridgeNotification);
+      return;
+
+    case 'approval-expired':
+      await handleApprovalExpired(data as ApprovalExpired);
+      return;
+
+    default:
+      // Standard socket response (no type field)
+      await handleSocketResponse(data as SocketResponse);
+      return;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Message handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle an approval request from the gateway.
+ * Sends a Telegram message with inline Approve/Reject buttons.
+ */
+async function handleApprovalRequest(request: ApprovalRequest): Promise<void> {
+  const { approvalId, toolName, toolInput, reason, planContext, chatId } = request;
+
+  // Format the approval message
+  const toolSummary = formatToolSummary(toolName, toolInput);
+  let messageText = `🔒 *Approval Required*\n\nThe agent wants to:\n  📝 ${toolSummary}`;
+
+  if (reason) {
+    messageText += `\n\nReason: _"${escapeMarkdown(reason)}"_`;
+  }
+
+  if (planContext) {
+    messageText += `\n\nContext: ${escapeMarkdown(planContext)}`;
+  }
+
+  // Build inline keyboard with Approve/Reject buttons
+  const keyboard = new InlineKeyboard()
+    .text('✅ Approve', `approve:${approvalId}`)
+    .text('❌ Reject', `reject:${approvalId}`);
+
+  try {
+    const sent = await bot.api.sendMessage(chatId, messageText, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+
+    // Track the message so we can edit it later (on expiry or decision)
+    approvalMessages.set(approvalId, {
+      chatId,
+      messageId: sent.message_id,
+    });
+
+    console.log(`[bridge-telegram] Sent approval request: ${approvalId} (msg: ${sent.message_id})`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to send approval request:`, error.message);
+  }
+}
+
+/**
+ * Handle a notification from the gateway.
+ * Sends a simple info message to the Telegram chat.
+ */
+async function handleNotification(notification: BridgeNotification): Promise<void> {
+  const { chatId, text } = notification;
+
+  try {
+    await bot.api.sendMessage(chatId, text);
+    console.log(`[bridge-telegram] Sent notification to chat ${chatId}`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to send notification:`, error.message);
+  }
+}
+
+/**
+ * Handle an approval expiry from the gateway.
+ * Edits the original Telegram message to show it expired and remove buttons.
+ */
+async function handleApprovalExpired(expired: ApprovalExpired): Promise<void> {
+  const { approvalId, chatId } = expired;
+
+  // Mark as resolved so late button presses are rejected
+  resolvedApprovals.add(approvalId);
+
+  const ref = approvalMessages.get(approvalId);
+  approvalMessages.delete(approvalId);
+
+  if (ref) {
+    try {
+      // Retrieve the original message text if possible, then append expiry notice
+      await bot.api.editMessageText(
+        ref.chatId,
+        ref.messageId,
+        '⏰ *Approval Expired*\n\nThis approval request timed out after 5 minutes. The action was not executed.',
+        { parse_mode: 'Markdown' },
+      );
+      console.log(`[bridge-telegram] Marked approval ${approvalId} as expired`);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(`[bridge-telegram] Failed to edit expired approval message:`, error.message);
+    }
+  } else {
+    // No tracked message — send a new notification
+    try {
+      await bot.api.sendMessage(
+        chatId,
+        '⏰ An approval request expired before you responded. The action was not executed.',
+      );
+    } catch {
+      // Best-effort notification
+    }
+  }
+}
+
+/**
+ * Handle a standard socket response from the gateway.
+ * Sends the response text back to the Telegram chat.
+ */
+async function handleSocketResponse(response: SocketResponse): Promise<void> {
   if (!response.requestId || !response.outgoing) {
-    console.error('[bridge-telegram] Invalid response from gateway:', data);
+    console.error('[bridge-telegram] Invalid response from gateway:', response);
     return;
   }
 
@@ -141,7 +371,37 @@ socketClient.on('message', async (data: unknown) => {
     const error = err instanceof Error ? err : new Error(String(err));
     console.error(`[bridge-telegram] Failed to send Telegram message for request ${requestId}:`, error.message);
   }
-});
+}
+
+// ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
+
+/** Format a tool call for display in the approval message. */
+function formatToolSummary(toolName: string, toolInput: Record<string, unknown>): string {
+  switch (toolName) {
+    case 'write_file':
+      return `write\\_file → ${escapeMarkdown(String(toolInput['path'] ?? 'unknown'))}`;
+    case 'read_file':
+      return `read\\_file → ${escapeMarkdown(String(toolInput['path'] ?? 'unknown'))}`;
+    case 'list_directory':
+      return `list\\_directory → ${escapeMarkdown(String(toolInput['path'] ?? 'unknown'))}`;
+    case 'search_files':
+      return `search\\_files → ${escapeMarkdown(String(toolInput['path'] ?? '.'))}`;
+    case 'run_shell_command': {
+      const cmd = String(toolInput['command'] ?? '');
+      const display = cmd.length > 60 ? cmd.slice(0, 60) + '…' : cmd;
+      return `run\\_shell\\_command → \`${escapeMarkdown(display)}\``;
+    }
+    default:
+      return `${escapeMarkdown(toolName)}`;
+  }
+}
+
+/** Escape special Markdown characters for Telegram. */
+function escapeMarkdown(text: string): string {
+  return text.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
+}
 
 // ---------------------------------------------------------------------------
 // Connection status logging

@@ -45,7 +45,10 @@ export interface AuditEntry {
     | 'message_sent'
     | 'error'
     | 'tool_call'
-    | 'tool_result';
+    | 'tool_result'
+    | 'action_classified'
+    | 'approval_requested'
+    | 'approval_resolved';
   sessionId: string;
   data: Record<string, unknown>;
 }
@@ -72,3 +75,54 @@ export interface SocketResponse {
   requestId: string;
   outgoing: OutgoingMessage;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3: HITL Approval Protocol
+// ---------------------------------------------------------------------------
+
+/** Action classification tiers */
+export type ActionTier = 'auto-approve' | 'notify' | 'require-approval';
+
+/** Approval request — gateway sends to bridge for user confirmation */
+export interface ApprovalRequest {
+  type: 'approval-request';
+  approvalId: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  reason: string;
+  planContext?: string;
+  chatId: string;
+}
+
+/** Approval decision — bridge sends to gateway after user taps inline button */
+export interface ApprovalDecision {
+  type: 'approval-decision';
+  approvalId: string;
+  decision: 'approved' | 'rejected';
+}
+
+/** Notification — gateway sends to bridge for informational messages */
+export interface BridgeNotification {
+  type: 'notification';
+  chatId: string;
+  text: string;
+}
+
+/** Approval expired — gateway tells bridge to update the Telegram message */
+export interface ApprovalExpired {
+  type: 'approval-expired';
+  approvalId: string;
+  chatId: string;
+}
+
+/** Union of all gateway → bridge message types */
+export type GatewayToBridgeMessage =
+  | SocketResponse
+  | ApprovalRequest
+  | BridgeNotification
+  | ApprovalExpired;
+
+/** Union of all bridge → gateway message types */
+export type BridgeToGatewayMessage =
+  | SocketRequest
+  | ApprovalDecision;

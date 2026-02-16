@@ -14,6 +14,9 @@ COPY packages/bridge-telegram/package.json packages/bridge-telegram/
 COPY packages/executor-shell/package.json packages/executor-shell/
 COPY packages/executor-file/package.json packages/executor-file/
 
+# Install build tools for native modules (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
 # Install all dependencies (including devDependencies for build)
 RUN npm ci --workspace=packages/shared --workspace=packages/gateway --include-workspace-root
 
@@ -47,8 +50,10 @@ COPY packages/executor-file/package.json packages/executor-file/
 COPY --from=builder /app/packages/shared/dist/ packages/shared/dist/
 COPY --from=builder /app/packages/gateway/dist/ packages/gateway/dist/
 
-# Install production dependencies only
-RUN npm ci --omit=dev --workspace=packages/shared --workspace=packages/gateway --include-workspace-root
+# Install production dependencies only (need build tools for better-sqlite3 native module)
+RUN apk add --no-cache --virtual .build-deps python3 make g++ && \
+    npm ci --omit=dev --workspace=packages/shared --workspace=packages/gateway --include-workspace-root && \
+    apk del .build-deps
 
 # Create audit log directory and socket directory with correct ownership
 RUN mkdir -p /data/audit && chown -R app:app /data

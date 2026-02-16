@@ -111,6 +111,36 @@ export class AuditLogger {
     });
   }
 
+  /** Convenience: log an action classification decision. */
+  logActionClassified(sessionId: string, data: Record<string, unknown>): void {
+    this.log({
+      timestamp: new Date(),
+      type: 'action_classified',
+      sessionId,
+      data,
+    });
+  }
+
+  /** Convenience: log an approval request. */
+  logApprovalRequested(sessionId: string, data: Record<string, unknown>): void {
+    this.log({
+      timestamp: new Date(),
+      type: 'approval_requested',
+      sessionId,
+      data,
+    });
+  }
+
+  /** Convenience: log an approval resolution. */
+  logApprovalResolved(sessionId: string, data: Record<string, unknown>): void {
+    this.log({
+      timestamp: new Date(),
+      type: 'approval_resolved',
+      sessionId,
+      data,
+    });
+  }
+
   /** Close the current write stream. */
   close(): void {
     if (this.stream) {

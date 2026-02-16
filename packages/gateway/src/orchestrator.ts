@@ -4,16 +4,23 @@
  * Flow:
  * 1. Send user message + tool definitions to Claude
  * 2. If Claude responds with tool_use blocks:
- *    a. Route each tool call through the Dispatcher (sandboxed container)
- *    b. Send tool results back to Claude
- *    c. Repeat until Claude responds with text (no more tool calls)
+ *    a. Gate each tool call through the HITL system (classify + approve)
+ *    b. If approved, route through the Dispatcher (sandboxed container)
+ *    c. If rejected, return rejection message to the LLM
+ *    d. Send tool results back to Claude
+ *    e. Repeat until Claude responds with text (no more tool calls)
  * 3. Return the final text response + full message history
  *
  * Safety: max 10 iterations to prevent infinite tool-call loops.
+ *
+ * Phase 3: Tool calls now go through the HITL gate for classification
+ * and potential approval before execution. The LLM never sees the tier
+ * system — it only sees tool results (success or rejection).
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { Dispatcher } from './dispatcher.js';
+import type { HITLGate } from './hitl-gate.js';
 import type { ExecutorResult } from '@secureclaw/shared';
 import type { AuditLogger } from './audit.js';
 import type { SecureClawConfig } from './config.js';
@@ -60,8 +67,7 @@ const TOOLS: Anthropic.Messages.Tool[] = [
   },
   {
     name: 'write_file',
-    description:
-      'Write content to a file. This may require user approval depending on the file location.',
+    description: 'Write content to a file.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -138,17 +144,20 @@ const MAX_ITERATIONS = 10;
 export class Orchestrator {
   private client: Anthropic;
   private dispatcher: Dispatcher;
+  private hitlGate: HITLGate;
   private auditLogger: AuditLogger;
   private config: SecureClawConfig;
 
   constructor(
     dispatcher: Dispatcher,
+    hitlGate: HITLGate,
     auditLogger: AuditLogger,
     config: SecureClawConfig,
   ) {
     // The Anthropic SDK reads ANTHROPIC_API_KEY from env automatically
     this.client = new Anthropic();
     this.dispatcher = dispatcher;
+    this.hitlGate = hitlGate;
     this.auditLogger = auditLogger;
     this.config = config;
   }
@@ -160,11 +169,13 @@ export class Orchestrator {
    *
    * @param sessionId - For audit logging
    * @param messages - Conversation history (Anthropic MessageParam format)
+   * @param chatId - Telegram chat ID for sending notifications / approval requests
    * @returns The final text response and the updated messages array
    */
   async chat(
     sessionId: string,
     messages: Anthropic.Messages.MessageParam[],
+    chatId: string,
   ): Promise<{ text: string; messages: Anthropic.Messages.MessageParam[] }> {
     const workingMessages = [...messages];
     let iterations = 0;
@@ -202,17 +213,33 @@ export class Orchestrator {
           content: response.content,
         });
 
+        // Extract text blocks as the LLM's reasoning/explanation
+        const textBlocks = response.content.filter(
+          (block): block is Anthropic.Messages.TextBlock =>
+            block.type === 'text',
+        );
+        const assistantReason = textBlocks.map((b) => b.text).join(' ').trim();
+
+        // Get the most recent user message for plan context
+        const lastUserMsg = [...workingMessages]
+          .reverse()
+          .find((m) => m.role === 'user');
+        const planContext = typeof lastUserMsg?.content === 'string'
+          ? lastUserMsg.content
+          : undefined;
+
         // Extract tool_use blocks
         const toolUseBlocks = response.content.filter(
           (block): block is Anthropic.Messages.ToolUseBlock =>
             block.type === 'tool_use',
         );
 
-        // Execute each tool call through the dispatcher
+        // Process each tool call through the HITL gate, then dispatch
         const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
 
         for (const toolUse of toolUseBlocks) {
           const input = toolUse.input as Record<string, unknown>;
+          const reason = assistantReason || `Executing ${toolUse.name}`;
 
           console.log(
             `[orchestrator] Tool call: ${toolUse.name}(${JSON.stringify(input).slice(0, 200)})`,
@@ -225,34 +252,69 @@ export class Orchestrator {
             input,
           });
 
-          // Route to the appropriate executor
-          const result = await this.dispatchToolCall(toolUse.name, input);
-
-          // Audit the result
-          this.auditLogger.logToolResult(sessionId, {
-            toolCallId: toolUse.id,
+          // Gate the tool call through the HITL system
+          const gateResult = await this.hitlGate.gate({
+            sessionId,
             toolName: toolUse.name,
-            success: result.success,
-            exitCode: result.exitCode,
-            durationMs: result.durationMs,
-            outputLength: result.stdout.length,
-            error: result.error,
+            toolInput: input,
+            chatId,
+            reason,
+            planContext,
           });
 
-          // Format the result for the LLM
-          const resultContent = result.success
-            ? result.stdout
-            : `Error: ${result.error ?? result.stderr}\nStderr: ${result.stderr}`;
+          let resultContent: string;
+
+          if (gateResult.proceed) {
+            // Approved — execute the tool
+            const result = await this.dispatchToolCall(toolUse.name, input);
+
+            // Audit the result
+            this.auditLogger.logToolResult(sessionId, {
+              toolCallId: toolUse.id,
+              toolName: toolUse.name,
+              tier: gateResult.tier,
+              success: result.success,
+              exitCode: result.exitCode,
+              durationMs: result.durationMs,
+              outputLength: result.stdout.length,
+              error: result.error,
+            });
+
+            resultContent = result.success
+              ? result.stdout
+              : `Error: ${result.error ?? result.stderr}\nStderr: ${result.stderr}`;
+
+            resultContent = resultContent.slice(
+              0,
+              this.config.executors.file.defaultMaxOutput,
+            );
+
+            console.log(
+              `[orchestrator] Tool result: ${toolUse.name} → ${result.success ? 'success' : 'error'} (${result.durationMs}ms, tier: ${gateResult.tier})`,
+            );
+          } else {
+            // Rejected — tell the LLM the user declined
+            resultContent = `Action rejected by the user. The user declined to approve: ${toolUse.name}. Please adjust your approach or ask the user how they would like to proceed.`;
+
+            this.auditLogger.logToolResult(sessionId, {
+              toolCallId: toolUse.id,
+              toolName: toolUse.name,
+              tier: gateResult.tier,
+              success: false,
+              rejected: true,
+              approvalId: gateResult.approvalId,
+            });
+
+            console.log(
+              `[orchestrator] Tool rejected: ${toolUse.name} (approval: ${gateResult.approvalId})`,
+            );
+          }
 
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
-            content: resultContent.slice(0, this.config.executors.file.defaultMaxOutput),
+            content: resultContent,
           });
-
-          console.log(
-            `[orchestrator] Tool result: ${toolUse.name} → ${result.success ? 'success' : 'error'} (${result.durationMs}ms)`,
-          );
         }
 
         // Append tool results as a user message

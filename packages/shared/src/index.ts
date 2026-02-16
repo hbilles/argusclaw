@@ -6,6 +6,13 @@ export type {
   ExecutorResult,
   SocketRequest,
   SocketResponse,
+  ActionTier,
+  ApprovalRequest,
+  ApprovalDecision,
+  BridgeNotification,
+  ApprovalExpired,
+  GatewayToBridgeMessage,
+  BridgeToGatewayMessage,
 } from './types.js';
 
 export type {
