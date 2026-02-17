@@ -8,6 +8,9 @@
  * Phase 3: Added the HITL approval gate. Tool calls are now classified
  * into tiers (auto-approve / notify / require-approval) based on config.
  * Dangerous actions require explicit user approval via Telegram inline buttons.
+ *
+ * Phase 4: Added persistent memory, memory-aware prompts, the Ralph Wiggum
+ * loop for multi-step tasks, and bridge commands for memory/session management.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -16,6 +19,15 @@ import type {
   SocketRequest,
   SocketResponse,
   ApprovalDecision,
+  MemoryListRequest,
+  MemoryDeleteRequest,
+  SessionListRequest,
+  TaskStopRequest,
+  MemoryListResponse,
+  MemoryDeleteResponse,
+  SessionListResponse,
+  TaskStopResponse,
+  TaskProgressUpdate,
 } from '@secureclaw/shared';
 import { SessionManager } from './session.js';
 import { AuditLogger } from './audit.js';
@@ -24,6 +36,33 @@ import { Dispatcher } from './dispatcher.js';
 import { Orchestrator } from './orchestrator.js';
 import { ApprovalStore } from './approval-store.js';
 import { HITLGate } from './hitl-gate.js';
+import { MemoryStore } from './memory.js';
+import { PromptBuilder } from './prompt-builder.js';
+import { TaskLoop } from './loop.js';
+
+// ---------------------------------------------------------------------------
+// Heuristic: Is a request "complex" enough for the Ralph Wiggum loop?
+// ---------------------------------------------------------------------------
+
+const COMPLEX_KEYWORDS = [
+  'set up', 'setup', 'create a project', 'scaffold', 'initialize',
+  'configure', 'build me', 'build a', 'set up a', 'install and configure',
+  'step by step', 'steps', 'multi-step', 'pipeline', 'workflow',
+  'deploy', 'migration', 'refactor', 'restructure', 'convert',
+];
+
+function isComplexRequest(content: string): boolean {
+  const lower = content.toLowerCase();
+  // Check for multiple action verbs or explicit complexity keywords
+  const matchCount = COMPLEX_KEYWORDS.filter((kw) => lower.includes(kw)).length;
+  // Also check for requests with many conjunctions (and, then, also, with)
+  const conjunctions = (lower.match(/\band\b|\bthen\b|\balso\b|\bwith\b/g) || []).length;
+  return matchCount >= 1 || conjunctions >= 3;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
   console.log('[gateway] Starting SecureClaw Gateway...');
@@ -57,6 +96,10 @@ async function main(): Promise<void> {
     );
   }
 
+  // Phase 4: Initialize memory store and prompt builder
+  const memoryStore = new MemoryStore();
+  const promptBuilder = new PromptBuilder(memoryStore);
+
   const socketServer = new SocketServer();
 
   // Initialize the HITL gate (approval system)
@@ -71,6 +114,27 @@ async function main(): Promise<void> {
   // Initialize the orchestrator (agentic tool-use loop)
   const orchestrator = new Orchestrator(dispatcher, hitlGate, auditLogger, config);
 
+  // Attach memory to the orchestrator
+  orchestrator.setMemory(memoryStore, promptBuilder);
+
+  // Phase 4: Initialize the Ralph Wiggum task loop
+  const sendProgress = (chatId: string, text: string) => {
+    const progressMsg: TaskProgressUpdate = {
+      type: 'task-progress',
+      chatId,
+      text,
+    };
+    socketServer.broadcast(progressMsg);
+  };
+
+  const taskLoop = new TaskLoop(
+    orchestrator,
+    memoryStore,
+    promptBuilder,
+    auditLogger,
+    sendProgress,
+  );
+
   // Handle incoming messages from bridges
   socketServer.on('message', async (data: unknown, reply: (response: unknown) => void, clientId: string) => {
     const raw = data as Record<string, unknown>;
@@ -82,6 +146,70 @@ async function main(): Promise<void> {
         `[gateway] Approval decision: ${decision.approvalId} → ${decision.decision}`,
       );
       hitlGate.resolveApproval(decision.approvalId, decision.decision);
+      return;
+    }
+
+    // --- Phase 4: Handle memory commands from bridge ---
+    if (raw['type'] === 'memory-list') {
+      const req = data as MemoryListRequest;
+      const memories = memoryStore.getAll();
+      const response: MemoryListResponse = {
+        type: 'memory-list-response',
+        chatId: req.chatId,
+        memories: memories.map((m) => ({
+          id: m.id,
+          category: m.category,
+          topic: m.topic,
+          content: m.content,
+          updatedAt: m.updatedAt,
+        })),
+      };
+      socketServer.broadcast(response);
+      return;
+    }
+
+    if (raw['type'] === 'memory-delete') {
+      const req = data as MemoryDeleteRequest;
+      const success = memoryStore.deleteByTopic(req.topic);
+      const response: MemoryDeleteResponse = {
+        type: 'memory-delete-response',
+        chatId: req.chatId,
+        success,
+        topic: req.topic,
+      };
+      socketServer.broadcast(response);
+      return;
+    }
+
+    if (raw['type'] === 'session-list') {
+      const req = data as SessionListRequest;
+      const sessions = memoryStore.getRecentSessions(req.userId, 10);
+      const response: SessionListResponse = {
+        type: 'session-list-response',
+        chatId: req.chatId,
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          status: s.status,
+          originalRequest: s.originalRequest,
+          iteration: s.iteration,
+          maxIterations: s.maxIterations,
+          createdAt: s.createdAt,
+        })),
+      };
+      socketServer.broadcast(response);
+      return;
+    }
+
+    if (raw['type'] === 'task-stop') {
+      const req = data as TaskStopRequest;
+      const sessionId = taskLoop.cancelUserSession(req.userId);
+      const response: TaskStopResponse = {
+        type: 'task-stop-response',
+        chatId: req.chatId,
+        cancelled: sessionId !== null,
+        sessionId: sessionId ?? undefined,
+      };
+      socketServer.broadcast(response);
       return;
     }
 
@@ -109,59 +237,145 @@ async function main(): Promise<void> {
         sourceId: message.sourceId,
       });
 
-      // 2. Build the messages array from session history
-      //    Cast to Anthropic format — the session stores messages in a
-      //    compatible format (role + content where content is string or block array).
-      const chatMessages = session.messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })) as Anthropic.Messages.MessageParam[];
+      // 2. Check if there's an active task session for this user
+      const activeTaskSession = memoryStore.getActiveSession(userId);
 
-      // 3. Append the new user message
-      chatMessages.push({
-        role: 'user',
-        content,
-      });
+      // 3. Decide: normal chat or Ralph Wiggum loop?
+      if (!activeTaskSession && isComplexRequest(content)) {
+        // Complex request → use the Ralph Wiggum loop
+        console.log(
+          `[gateway] Complex request detected for session ${session.id} — starting task loop`,
+        );
 
-      // 4. Run the orchestrator (agentic tool-use loop)
-      //    Pass the chatId so the HITL gate can send approval requests
-      //    and notifications to the correct Telegram chat.
-      console.log(
-        `[gateway] Processing message for session ${session.id} ` +
-        `(${chatMessages.length} messages in context)`,
-      );
+        const loopResult = await taskLoop.execute(
+          userId,
+          content,
+          replyTo.chatId,
+          session.id,
+        );
 
-      const result = await orchestrator.chat(session.id, chatMessages, replyTo.chatId);
+        // Send the final response back to the bridge
+        const socketResponse: SocketResponse = {
+          requestId,
+          outgoing: {
+            chatId: replyTo.chatId,
+            content: loopResult.text,
+            replyToId: replyTo.messageId,
+          },
+        };
 
-      // 5. Store the updated messages in the session
-      //    This includes all intermediate tool_use / tool_result messages.
-      sessionManager.setMessages(
-        userId,
-        result.messages as Array<{ role: 'user' | 'assistant'; content: unknown }>,
-      );
+        reply(socketResponse);
 
-      // 6. Send the final text response back to the bridge
-      const socketResponse: SocketResponse = {
-        requestId,
-        outgoing: {
+        auditLogger.logMessageSent(session.id, {
+          requestId,
           chatId: replyTo.chatId,
-          content: result.text,
-          replyToId: replyTo.messageId,
-        },
-      };
+          contentLength: loopResult.text.length,
+          taskSessionId: loopResult.sessionId,
+          iterations: loopResult.iterations,
+          completed: loopResult.completed,
+        });
 
-      reply(socketResponse);
+        console.log(
+          `[gateway] Task loop completed for request ${requestId} ` +
+          `(${loopResult.iterations} iterations, completed: ${loopResult.completed})`,
+        );
 
-      // 7. Log message sent
-      auditLogger.logMessageSent(session.id, {
-        requestId,
-        chatId: replyTo.chatId,
-        contentLength: result.text.length,
-      });
+      } else {
+        // Normal conversation (or continuation within active session context)
 
-      console.log(
-        `[gateway] Response sent for request ${requestId} (${result.text.length} chars)`,
-      );
+        // 4. Build the messages array from session history
+        const chatMessages = session.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })) as Anthropic.Messages.MessageParam[];
+
+        // 5. Append the new user message
+        chatMessages.push({
+          role: 'user',
+          content,
+        });
+
+        // 6. Run the orchestrator (agentic tool-use loop)
+        console.log(
+          `[gateway] Processing message for session ${session.id} ` +
+          `(${chatMessages.length} messages in context)`,
+        );
+
+        const result = await orchestrator.chat(session.id, chatMessages, replyTo.chatId, userId);
+
+        // 7. Check if the response contains [CONTINUE] (Ralph Wiggum trigger from normal chat)
+        if (result.text.includes('[CONTINUE]')) {
+          // The LLM decided mid-conversation this needs multi-step handling.
+          // Start a task loop from here.
+          console.log(`[gateway] [CONTINUE] detected in normal chat — switching to task loop`);
+
+          const cleanText = result.text.replace('[CONTINUE]', '').trim();
+
+          // Store the conversation so far
+          sessionManager.setMessages(
+            userId,
+            result.messages as Array<{ role: 'user' | 'assistant'; content: unknown }>,
+          );
+
+          // Send the partial response
+          const partialResponse: SocketResponse = {
+            requestId,
+            outgoing: {
+              chatId: replyTo.chatId,
+              content: cleanText,
+              replyToId: replyTo.messageId,
+            },
+          };
+          reply(partialResponse);
+
+          // Now start the loop for the continuation
+          const loopResult = await taskLoop.execute(
+            userId,
+            content,
+            replyTo.chatId,
+            session.id,
+          );
+
+          // Send the loop's final response as a new message
+          socketServer.broadcast({
+            type: 'notification',
+            chatId: replyTo.chatId,
+            text: loopResult.text,
+          });
+
+        } else {
+          // Normal response — no loop needed
+
+          // 8. Store the updated messages in the session
+          sessionManager.setMessages(
+            userId,
+            result.messages as Array<{ role: 'user' | 'assistant'; content: unknown }>,
+          );
+
+          // 9. Send the final text response back to the bridge
+          const socketResponse: SocketResponse = {
+            requestId,
+            outgoing: {
+              chatId: replyTo.chatId,
+              content: result.text,
+              replyToId: replyTo.messageId,
+            },
+          };
+
+          reply(socketResponse);
+
+          // 10. Log message sent
+          auditLogger.logMessageSent(session.id, {
+            requestId,
+            chatId: replyTo.chatId,
+            contentLength: result.text.length,
+          });
+
+          console.log(
+            `[gateway] Response sent for request ${requestId} (${result.text.length} chars)`,
+          );
+        }
+      }
 
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -198,6 +412,7 @@ async function main(): Promise<void> {
     sessionManager.dispose();
     auditLogger.close();
     approvalStore.close();
+    memoryStore.close();
     process.exit(0);
   };
 

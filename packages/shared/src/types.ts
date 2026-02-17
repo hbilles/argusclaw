@@ -115,14 +115,106 @@ export interface ApprovalExpired {
   chatId: string;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4: Memory & Task Session Protocol
+// ---------------------------------------------------------------------------
+
+/** Progress update — gateway sends to bridge during multi-step task execution */
+export interface TaskProgressUpdate {
+  type: 'task-progress';
+  chatId: string;
+  text: string;
+}
+
+/** Memory list request — bridge sends to gateway when user types /memories */
+export interface MemoryListRequest {
+  type: 'memory-list';
+  userId: string;
+  chatId: string;
+}
+
+/** Memory list response — gateway sends to bridge with all memories */
+export interface MemoryListResponse {
+  type: 'memory-list-response';
+  chatId: string;
+  memories: Array<{
+    id: string;
+    category: string;
+    topic: string;
+    content: string;
+    updatedAt: string;
+  }>;
+}
+
+/** Memory delete request — bridge sends to gateway when user types /forget */
+export interface MemoryDeleteRequest {
+  type: 'memory-delete';
+  userId: string;
+  chatId: string;
+  topic: string;
+}
+
+/** Memory delete response — gateway sends to bridge confirming deletion */
+export interface MemoryDeleteResponse {
+  type: 'memory-delete-response';
+  chatId: string;
+  success: boolean;
+  topic: string;
+}
+
+/** Session list request — bridge sends to gateway when user types /sessions */
+export interface SessionListRequest {
+  type: 'session-list';
+  userId: string;
+  chatId: string;
+}
+
+/** Session list response — gateway sends to bridge with recent sessions */
+export interface SessionListResponse {
+  type: 'session-list-response';
+  chatId: string;
+  sessions: Array<{
+    id: string;
+    status: string;
+    originalRequest: string;
+    iteration: number;
+    maxIterations: number;
+    createdAt: string;
+  }>;
+}
+
+/** Stop request — bridge sends to gateway when user types /stop */
+export interface TaskStopRequest {
+  type: 'task-stop';
+  userId: string;
+  chatId: string;
+}
+
+/** Stop response — gateway sends to bridge confirming cancellation */
+export interface TaskStopResponse {
+  type: 'task-stop-response';
+  chatId: string;
+  cancelled: boolean;
+  sessionId?: string;
+}
+
 /** Union of all gateway → bridge message types */
 export type GatewayToBridgeMessage =
   | SocketResponse
   | ApprovalRequest
   | BridgeNotification
-  | ApprovalExpired;
+  | ApprovalExpired
+  | TaskProgressUpdate
+  | MemoryListResponse
+  | MemoryDeleteResponse
+  | SessionListResponse
+  | TaskStopResponse;
 
 /** Union of all bridge → gateway message types */
 export type BridgeToGatewayMessage =
   | SocketRequest
-  | ApprovalDecision;
+  | ApprovalDecision
+  | MemoryListRequest
+  | MemoryDeleteRequest
+  | SessionListRequest
+  | TaskStopRequest;

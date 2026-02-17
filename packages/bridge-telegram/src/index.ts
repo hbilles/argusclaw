@@ -9,6 +9,14 @@
  * - Callback query handling for Approve/Reject decisions
  * - Notification messages for 'notify' tier actions
  * - Approval expiry message editing
+ *
+ * Phase 4: Added support for:
+ * - /memories — List all memories (paginated, by category)
+ * - /forget <topic> — Delete a specific memory
+ * - /sessions — Show active/recent sessions
+ * - /stop — Cancel the current multi-step session
+ * - Task progress updates
+ * - Memory/session command responses
  */
 
 import { Bot, InlineKeyboard } from 'grammy';
@@ -22,6 +30,15 @@ import type {
   ApprovalDecision,
   BridgeNotification,
   ApprovalExpired,
+  TaskProgressUpdate,
+  MemoryListRequest,
+  MemoryListResponse,
+  MemoryDeleteRequest,
+  MemoryDeleteResponse,
+  SessionListRequest,
+  SessionListResponse,
+  TaskStopRequest,
+  TaskStopResponse,
 } from '@secureclaw/shared';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +94,112 @@ const resolvedApprovals: Set<string> = new Set();
 
 const bot = new Bot(TELEGRAM_BOT_TOKEN);
 const socketClient = new SocketClient();
+
+// ---------------------------------------------------------------------------
+// Phase 4: Telegram Commands
+// ---------------------------------------------------------------------------
+
+/**
+ * /memories — List all memories, grouped by category.
+ */
+bot.command('memories', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId || !ALLOWED_USER_IDS.has(userId)) return;
+
+  const chatId = ctx.chat.id.toString();
+
+  const request: MemoryListRequest = {
+    type: 'memory-list',
+    userId,
+    chatId,
+  };
+
+  if (socketClient.connected) {
+    socketClient.send(request);
+    console.log(`[bridge-telegram] Sent memory-list request for user ${userId}`);
+  } else {
+    await ctx.reply('Sorry, I\'m not connected to the gateway right now.');
+  }
+});
+
+/**
+ * /forget <topic> — Delete a memory by topic.
+ */
+bot.command('forget', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId || !ALLOWED_USER_IDS.has(userId)) return;
+
+  const chatId = ctx.chat.id.toString();
+  const topic = ctx.match?.trim();
+
+  if (!topic) {
+    await ctx.reply(
+      '⚠️ Usage: `/forget <topic>`\n\nExample: `/forget coding style`',
+      { parse_mode: 'Markdown' },
+    );
+    return;
+  }
+
+  const request: MemoryDeleteRequest = {
+    type: 'memory-delete',
+    userId,
+    chatId,
+    topic,
+  };
+
+  if (socketClient.connected) {
+    socketClient.send(request);
+    console.log(`[bridge-telegram] Sent memory-delete request for topic "${topic}"`);
+  } else {
+    await ctx.reply('Sorry, I\'m not connected to the gateway right now.');
+  }
+});
+
+/**
+ * /sessions — Show active/recent sessions.
+ */
+bot.command('sessions', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId || !ALLOWED_USER_IDS.has(userId)) return;
+
+  const chatId = ctx.chat.id.toString();
+
+  const request: SessionListRequest = {
+    type: 'session-list',
+    userId,
+    chatId,
+  };
+
+  if (socketClient.connected) {
+    socketClient.send(request);
+    console.log(`[bridge-telegram] Sent session-list request for user ${userId}`);
+  } else {
+    await ctx.reply('Sorry, I\'m not connected to the gateway right now.');
+  }
+});
+
+/**
+ * /stop — Cancel the current multi-step task.
+ */
+bot.command('stop', async (ctx) => {
+  const userId = ctx.from?.id.toString();
+  if (!userId || !ALLOWED_USER_IDS.has(userId)) return;
+
+  const chatId = ctx.chat.id.toString();
+
+  const request: TaskStopRequest = {
+    type: 'task-stop',
+    userId,
+    chatId,
+  };
+
+  if (socketClient.connected) {
+    socketClient.send(request);
+    console.log(`[bridge-telegram] Sent task-stop request for user ${userId}`);
+  } else {
+    await ctx.reply('Sorry, I\'m not connected to the gateway right now.');
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Handle incoming Telegram messages
@@ -234,6 +357,27 @@ socketClient.on('message', async (data: unknown) => {
       await handleApprovalExpired(data as ApprovalExpired);
       return;
 
+    // Phase 4: New message types
+    case 'task-progress':
+      await handleTaskProgress(data as TaskProgressUpdate);
+      return;
+
+    case 'memory-list-response':
+      await handleMemoryListResponse(data as MemoryListResponse);
+      return;
+
+    case 'memory-delete-response':
+      await handleMemoryDeleteResponse(data as MemoryDeleteResponse);
+      return;
+
+    case 'session-list-response':
+      await handleSessionListResponse(data as SessionListResponse);
+      return;
+
+    case 'task-stop-response':
+      await handleTaskStopResponse(data as TaskStopResponse);
+      return;
+
     default:
       // Standard socket response (no type field)
       await handleSocketResponse(data as SocketResponse);
@@ -341,6 +485,177 @@ async function handleApprovalExpired(expired: ApprovalExpired): Promise<void> {
     } catch {
       // Best-effort notification
     }
+  }
+}
+
+/**
+ * Handle a task progress update from the gateway.
+ * Sends a progress message to the Telegram chat.
+ */
+async function handleTaskProgress(progress: TaskProgressUpdate): Promise<void> {
+  const { chatId, text } = progress;
+
+  try {
+    await bot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    console.log(`[bridge-telegram] Sent task progress to chat ${chatId}`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to send task progress:`, error.message);
+  }
+}
+
+/**
+ * Handle memory list response — format and send to the user.
+ */
+async function handleMemoryListResponse(response: MemoryListResponse): Promise<void> {
+  const { chatId, memories } = response;
+
+  if (memories.length === 0) {
+    try {
+      await bot.api.sendMessage(chatId, '🧠 No memories stored yet.');
+    } catch {
+      // Best-effort
+    }
+    return;
+  }
+
+  // Group by category
+  const grouped = new Map<string, typeof memories>();
+  for (const m of memories) {
+    if (!grouped.has(m.category)) {
+      grouped.set(m.category, []);
+    }
+    grouped.get(m.category)!.push(m);
+  }
+
+  let text = '🧠 *Memories*\n\n';
+  const categoryEmojis: Record<string, string> = {
+    user: '👤',
+    preference: '⚙️',
+    project: '📁',
+    fact: '📌',
+    environment: '💻',
+  };
+
+  for (const [category, items] of grouped) {
+    const emoji = categoryEmojis[category] ?? '📝';
+    text += `${emoji} *${escapeMarkdown(category)}*\n`;
+
+    for (const item of items) {
+      const content = item.content.length > 100
+        ? item.content.slice(0, 100) + '…'
+        : item.content;
+      text += `  • \`${escapeMarkdown(item.topic)}\`: ${escapeMarkdown(content)}\n`;
+    }
+    text += '\n';
+  }
+
+  text += `_${memories.length} total memory(ies). Use /forget <topic> to remove one._`;
+
+  // Telegram messages have a 4096 char limit
+  if (text.length > 4000) {
+    text = text.slice(0, 3950) + '\n\n_...truncated. Too many memories to display._';
+  }
+
+  try {
+    await bot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    console.log(`[bridge-telegram] Sent memory list (${memories.length} items) to chat ${chatId}`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to send memory list:`, error.message);
+    // Fallback: try without markdown
+    try {
+      await bot.api.sendMessage(chatId, `🧠 ${memories.length} memories stored. (Failed to format — try /forget <topic> to manage)`);
+    } catch {
+      // Best-effort
+    }
+  }
+}
+
+/**
+ * Handle memory delete response.
+ */
+async function handleMemoryDeleteResponse(response: MemoryDeleteResponse): Promise<void> {
+  const { chatId, success, topic } = response;
+
+  const text = success
+    ? `✅ Forgot: "${topic}"`
+    : `⚠️ No memory found with topic "${topic}"`;
+
+  try {
+    await bot.api.sendMessage(chatId, text);
+    console.log(`[bridge-telegram] Memory delete result for "${topic}": ${success}`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to send memory delete response:`, error.message);
+  }
+}
+
+/**
+ * Handle session list response.
+ */
+async function handleSessionListResponse(response: SessionListResponse): Promise<void> {
+  const { chatId, sessions } = response;
+
+  if (sessions.length === 0) {
+    try {
+      await bot.api.sendMessage(chatId, '📋 No recent task sessions.');
+    } catch {
+      // Best-effort
+    }
+    return;
+  }
+
+  let text = '📋 *Recent Sessions*\n\n';
+
+  const statusEmojis: Record<string, string> = {
+    active: '🔄',
+    completed: '✅',
+    failed: '❌',
+    paused: '⏸️',
+  };
+
+  for (const session of sessions) {
+    const emoji = statusEmojis[session.status] ?? '❓';
+    const request = session.originalRequest.length > 80
+      ? session.originalRequest.slice(0, 80) + '…'
+      : session.originalRequest;
+    const date = new Date(session.createdAt).toLocaleDateString();
+
+    text += `${emoji} *${escapeMarkdown(session.status)}* (${date})\n`;
+    text += `  _${escapeMarkdown(request)}_\n`;
+    text += `  Iterations: ${session.iteration}/${session.maxIterations}\n\n`;
+  }
+
+  if (sessions.some((s) => s.status === 'active')) {
+    text += '_Use /stop to cancel an active task._';
+  }
+
+  try {
+    await bot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    console.log(`[bridge-telegram] Sent session list (${sessions.length} items) to chat ${chatId}`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to send session list:`, error.message);
+  }
+}
+
+/**
+ * Handle task stop response.
+ */
+async function handleTaskStopResponse(response: TaskStopResponse): Promise<void> {
+  const { chatId, cancelled, sessionId } = response;
+
+  const text = cancelled
+    ? `🛑 Task cancelled${sessionId ? ` (session: ${sessionId.slice(0, 8)}…)` : ''}`
+    : '⚠️ No active task to cancel.';
+
+  try {
+    await bot.api.sendMessage(chatId, text);
+    console.log(`[bridge-telegram] Task stop result: cancelled=${cancelled}`);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bridge-telegram] Failed to send task stop response:`, error.message);
   }
 }
 

@@ -13,6 +13,16 @@ export type {
   ApprovalExpired,
   GatewayToBridgeMessage,
   BridgeToGatewayMessage,
+  // Phase 4
+  TaskProgressUpdate,
+  MemoryListRequest,
+  MemoryListResponse,
+  MemoryDeleteRequest,
+  MemoryDeleteResponse,
+  SessionListRequest,
+  SessionListResponse,
+  TaskStopRequest,
+  TaskStopResponse,
 } from './types.js';
 
 export type {
