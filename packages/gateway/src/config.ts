@@ -34,8 +34,11 @@ export interface ExecutorConfig {
   defaultMaxOutput: number;
 }
 
+export type WebResultFormat = 'legacy' | 'structured';
+
 export interface WebExecutorConfig extends ExecutorConfig {
   allowedDomains: string[];
+  resultFormat?: WebResultFormat;
 }
 
 export interface ActionCondition {
@@ -155,7 +158,17 @@ export function loadConfig(configPath?: string): SecureClawConfig {
       defaultTimeout: 120,
       defaultMaxOutput: 2097152, // 2MB
       allowedDomains: [],
+      resultFormat: 'legacy',
     };
+  }
+  if (!config.executors.web.resultFormat) {
+    config.executors.web.resultFormat = 'legacy';
+  }
+  if (config.executors.web.resultFormat !== 'legacy' && config.executors.web.resultFormat !== 'structured') {
+    console.warn(
+      `[config] WARNING: Invalid executors.web.resultFormat "${String(config.executors.web.resultFormat)}". Falling back to "legacy".`,
+    );
+    config.executors.web.resultFormat = 'legacy';
   }
   if (!config.trustedDomains) {
     config.trustedDomains = [];
@@ -172,7 +185,10 @@ export function loadConfig(configPath?: string): SecureClawConfig {
   console.log(`[config]   Mounts: ${config.mounts.map((m) => `${m.name} (${m.hostPath} → ${m.containerPath}${m.readOnly ? ', ro' : ''})`).join(', ')}`);
   console.log(`[config]   Shell executor: ${config.executors.shell.image} (timeout=${config.executors.shell.defaultTimeout}s, mem=${config.executors.shell.memoryLimit})`);
   console.log(`[config]   File executor: ${config.executors.file.image} (timeout=${config.executors.file.defaultTimeout}s, mem=${config.executors.file.memoryLimit})`);
-  console.log(`[config]   Web executor: ${config.executors.web.image} (timeout=${config.executors.web.defaultTimeout}s, domains=${config.executors.web.allowedDomains.length})`);
+  console.log(
+    `[config]   Web executor: ${config.executors.web.image} ` +
+    `(timeout=${config.executors.web.defaultTimeout}s, domains=${config.executors.web.allowedDomains.length}, format=${config.executors.web.resultFormat})`,
+  );
   console.log(`[config]   Trusted domains: ${config.trustedDomains.length > 0 ? config.trustedDomains.join(', ') : '(none)'}`);
   console.log(`[config]   Heartbeats: ${config.heartbeats.length} (${config.heartbeats.filter((h) => h.enabled).length} enabled)`);
 

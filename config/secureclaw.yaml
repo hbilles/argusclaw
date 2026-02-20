@@ -55,6 +55,10 @@ executors:
     cpuLimit: 2
     defaultTimeout: 120
     defaultMaxOutput: 2097152  # 2MB
+    # Web output format:
+    # - structured: compact JSON payload for agent consumption
+    # - legacy: plain text tree/content output
+    resultFormat: structured
     # Domains the web executor is allowed to access (HTTPS only).
     # All other domains are blocked at the DNS level.
     allowedDomains:

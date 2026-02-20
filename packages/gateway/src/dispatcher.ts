@@ -206,21 +206,21 @@ export class Dispatcher {
       }
 
       // Parse stdout as JSON result from the executor
-      try {
-        const result = JSON.parse(output.stdout.trim()) as ExecutorResult;
+      const result = parseExecutorResult(output.stdout);
+      if (result) {
         result.durationMs = durationMs;
         return result;
-      } catch {
-        // If stdout isn't valid JSON, wrap raw output
-        return {
-          success: exitResult.statusCode === 0,
-          exitCode: exitResult.statusCode,
-          stdout: output.stdout,
-          stderr: output.stderr,
-          durationMs,
-          error: exitResult.statusCode !== 0 ? 'non-zero exit code' : undefined,
-        };
       }
+
+      // If stdout isn't valid JSON, wrap raw output
+      return {
+        success: exitResult.statusCode === 0,
+        exitCode: exitResult.statusCode,
+        stdout: output.stdout,
+        stderr: output.stderr,
+        durationMs,
+        error: exitResult.statusCode !== 0 ? 'non-zero exit code' : undefined,
+      };
 
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -348,4 +348,44 @@ function demuxDockerLogs(buffer: Buffer | string): { stdout: string; stderr: str
   }
 
   return { stdout, stderr };
+}
+
+function parseExecutorResult(stdout: string): ExecutorResult | null {
+  const trimmed = stdout.trim();
+  if (!trimmed) return null;
+
+  const direct = tryParseExecutorResult(trimmed);
+  if (direct) return direct;
+
+  const lines = trimmed
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const parsed = tryParseExecutorResult(lines[i]!);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function tryParseExecutorResult(raw: string): ExecutorResult | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<ExecutorResult>;
+    if (
+      typeof parsed.success === 'boolean' &&
+      typeof parsed.exitCode === 'number' &&
+      typeof parsed.stdout === 'string' &&
+      typeof parsed.stderr === 'string' &&
+      typeof parsed.durationMs === 'number'
+    ) {
+      return parsed as ExecutorResult;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

@@ -62,7 +62,8 @@ export async function captureAccessibilityTree(
   // Walk the DOM inside the browser and build a lightweight tree
   const tree = await page.evaluate(
     ({ maxD, maxN }: { maxD: number; maxN: number }) => {
-      let count = 0;
+      let visitedCount = 0;
+      const maxVisited = Math.max(maxN * 30, 6000);
 
       const ROLE_MAP: Record<string, string> = {
         A: 'link',
@@ -101,6 +102,22 @@ export async function captureAccessibilityTree(
         B: 'strong',
         I: 'emphasis',
       };
+      const wrapperTags = new Set(['DIV', 'SPAN', 'CENTER']);
+      const textTags = new Set([
+        'A',
+        'BUTTON',
+        'SPAN',
+        'STRONG',
+        'EM',
+        'B',
+        'I',
+        'TD',
+        'TH',
+        'LI',
+        'P',
+        'LABEL',
+      ]);
+      const structuralNoiseTags = new Set(['NAV', 'HEADER', 'FOOTER', 'ASIDE']);
 
       interface SerNode {
         role: string;
@@ -115,7 +132,8 @@ export async function captureAccessibilityTree(
       }
 
       function walk(el: Element, depth: number): SerNode | null {
-        if (count >= maxN || depth > maxD) return null;
+        if (depth > maxD || visitedCount >= maxVisited) return null;
+        visitedCount++;
 
         const tag = el.tagName;
         const explicitRole = el.getAttribute('role');
@@ -160,7 +178,6 @@ export async function captureAccessibilityTree(
         // - Leaf nodes (no element children)
         // - Interactive elements (links, buttons)
         // - Inline text elements (span, strong, em, td, etc.)
-        const textTags = new Set(['A', 'BUTTON', 'SPAN', 'STRONG', 'EM', 'B', 'I', 'TD', 'TH', 'LI', 'P', 'LABEL']);
         if (!name && (el.children.length === 0 || textTags.has(tag) || explicitRole === 'button' || explicitRole === 'link')) {
           // For nodes with children, only get direct text (not all descendant text)
           // to avoid duplicating content that will appear in child nodes
@@ -180,11 +197,33 @@ export async function captureAccessibilityTree(
           if (text) node.name = text;
         }
 
-        count++;
-
         // Walk children
         const children: SerNode[] = [];
-        for (const child of Array.from(el.children)) {
+        const orderedChildren = Array.from(el.children).sort((a, b) => {
+          const tagA = a.tagName;
+          const tagB = b.tagName;
+          const roleA = a.getAttribute('role');
+          const roleB = b.getAttribute('role');
+          const scoreA =
+            roleA === 'main' || tagA === 'MAIN' || tagA === 'ARTICLE'
+              ? 3
+              : roleA === 'region' || tagA === 'SECTION'
+                ? 1
+                : structuralNoiseTags.has(tagA)
+                  ? -2
+                  : 0;
+          const scoreB =
+            roleB === 'main' || tagB === 'MAIN' || tagB === 'ARTICLE'
+              ? 3
+              : roleB === 'region' || tagB === 'SECTION'
+                ? 1
+                : structuralNoiseTags.has(tagB)
+                  ? -2
+                  : 0;
+          return scoreB - scoreA;
+        });
+
+        for (const child of orderedChildren) {
           const c = walk(child, depth + 1);
           if (c) children.push(c);
         }
@@ -196,7 +235,6 @@ export async function captureAccessibilityTree(
         }
 
         // Flatten: if a DIV/SPAN wrapper with no role/name and only one child, promote
-        const wrapperTags = new Set(['DIV', 'SPAN', 'CENTER']);
         if (!role && !node.name && children.length === 1 && wrapperTags.has(tag)) {
           return children[0];
         }
@@ -222,12 +260,12 @@ export async function captureAccessibilityTree(
 
   function render(node: AccessibilityNode, depth: number): void {
     if (nodeCount >= maxNodes || depth > maxDepth) return;
-    nodeCount++;
 
     const indent = '  '.repeat(depth);
     const line = formatNode(node);
 
     if (line) {
+      nodeCount++;
       lines.push(`${indent}${line}`);
     }
 
@@ -391,12 +429,13 @@ export async function extractMainContent(
 
     if (!main) return '(no content found)';
 
-    // Get text content, cleaning up excessive whitespace
+    // Preserve paragraph-like breaks while normalizing whitespace inside each line.
     const text = main.textContent || '';
     const cleaned = text
-      .replace(/\s+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
 
     return cleaned.slice(0, limit);
   }, maxLength);
