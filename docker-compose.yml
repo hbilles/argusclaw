@@ -18,6 +18,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - SOCKET_PATH=/tmp/sockets/secureclaw.sock
       - AUDIT_DIR=/data/audit
       - CAPABILITY_SECRET=${CAPABILITY_SECRET}

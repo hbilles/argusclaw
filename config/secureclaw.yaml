@@ -2,7 +2,7 @@
 # Phase 6: Multi-provider LLM support
 
 # LLM provider configuration.
-# Supported providers: anthropic, openai, lmstudio
+# Supported providers: anthropic, openai, lmstudio, codex
 #
 # Anthropic (default):
 #   provider: anthropic
@@ -21,10 +21,17 @@
 #   No API key needed.
 #   Default baseURL: http://host.docker.internal:1234/v1
 #   (host.docker.internal resolves to the host machine from inside Docker)
+#
+# Codex (OpenAI Responses API):
+#   provider: codex
+#   model: codex-mini-latest       # or gpt-5-codex, gpt-5.1-codex, gpt-5.2-codex
+#   Requires OPENAI_API_KEY env var (same key as OpenAI provider).
+#   Optional: baseURL for compatible endpoints.
+#   Optional: reasoningEffort: low | medium | high
 
 llm:
-  provider: anthropic
-  model: claude-sonnet-4-6
+  provider: codex
+  model: gpt-5.2-2025-12-11
   maxTokens: 4096
 
 executors:

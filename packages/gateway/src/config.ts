@@ -63,6 +63,8 @@ export interface SecureClawConfig {
     maxTokens: number;
     /** Custom API base URL (for LM Studio, Azure OpenAI, etc.). */
     baseURL?: string;
+    /** Reasoning effort for Codex/o-series models (low, medium, high). */
+    reasoningEffort?: 'low' | 'medium' | 'high';
   };
   executors: {
     shell: ExecutorConfig;

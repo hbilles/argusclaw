@@ -6,6 +6,7 @@
 import type { LLMProvider } from '../llm-provider.js';
 import type { SecureClawConfig } from '../config.js';
 import { AnthropicProvider } from './anthropic.js';
+import { CodexProvider } from './codex.js';
 import { OpenAIProvider } from './openai.js';
 
 export function createLLMProvider(config: SecureClawConfig): LLMProvider {
@@ -30,10 +31,17 @@ export function createLLMProvider(config: SecureClawConfig): LLMProvider {
         'lmstudio',
       );
 
+    case 'codex':
+      return new CodexProvider({
+        apiKey: process.env['OPENAI_API_KEY'],
+        baseURL: config.llm.baseURL,
+        reasoningEffort: config.llm.reasoningEffort,
+      });
+
     default:
       throw new Error(
         `Unknown LLM provider: "${provider}". ` +
-          'Supported providers: anthropic, openai, lmstudio',
+          'Supported providers: anthropic, openai, lmstudio, codex',
       );
   }
 }

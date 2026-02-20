@@ -50,7 +50,7 @@ secure-claw/
 │   ├── gateway/             # Central orchestrator (the only process with API keys)
 │   │   └── src/
 │   │       ├── index.ts             # Entrypoint — wires everything together
-│   │       ├── orchestrator.ts      # Agentic tool-use loop with Claude
+│   │       ├── orchestrator.ts      # Agentic tool-use loop
 │   │       ├── dispatcher.ts        # Docker container lifecycle + capability minting
 │   │       ├── hitl-gate.ts         # Action classification + approval queue
 │   │       ├── domain-manager.ts    # Runtime domain allowlist (base config + session grants)
@@ -62,7 +62,13 @@ secure-claw/
 │   │       ├── dashboard.ts         # Localhost-only web UI (SSE + REST)
 │   │       ├── audit.ts             # Append-only JSONL audit logger
 │   │       ├── config.ts            # YAML config loader + validation
+│   │       ├── llm-provider.ts      # Provider-agnostic LLM interface
 │   │       ├── approval-store.ts    # SQLite approval persistence
+│   │       ├── providers/
+│   │       │   ├── factory.ts       # Provider factory (selects from config)
+│   │       │   ├── anthropic.ts     # Anthropic Messages API
+│   │       │   ├── openai.ts        # OpenAI Chat Completions API
+│   │       │   └── codex.ts         # OpenAI Codex via Responses API
 │   │       └── services/
 │   │           ├── gmail.ts         # Gmail API (search, read, send, reply)
 │   │           ├── calendar.ts      # Google Calendar API (list, create, update)
@@ -111,7 +117,7 @@ User (Telegram) → Bridge → Gateway → LLM → [tool calls] → Executors �
 
 1. **Receive** — The Telegram Bridge polls the Bot API via grammY. It validates the sender's user ID against the allowlist and converts the Telegram message into an internal `Message` format. The message is sent to the Gateway over a Unix domain socket (JSON-lines protocol).
 
-2. **Plan** — The Gateway loads the user's session and relevant memories, assembles a system prompt (with memories, available tools, and session context), and sends it to Claude. The LLM responds with either a text reply or `tool_use` blocks.
+2. **Plan** — The Gateway loads the user's session and relevant memories, assembles a system prompt (with memories, available tools, and session context), and sends it to the configured LLM provider. The LLM responds with either a text reply or tool call blocks.
 
 3. **Gate** — For each tool call, the HITL Gate classifies the action into one of three tiers based on the tool name and its inputs (path patterns, working directory, etc.):
    - **auto-approve**: Safe read operations (read file, search, list directory, search email)
@@ -211,7 +217,8 @@ Every event is logged to an append-only JSONL audit log: messages received, LLM 
 ```sh
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 ALLOWED_USER_IDS=123456789         # Comma-separated Telegram user IDs
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=sk-ant-...        # For anthropic provider
+OPENAI_API_KEY=sk-...               # For openai or codex provider
 CAPABILITY_SECRET=random-secret    # Signs executor capability tokens
 OAUTH_KEY=encryption-passphrase   # Optional — encrypts OAuth tokens at rest
 ```
@@ -220,7 +227,7 @@ OAUTH_KEY=encryption-passphrase   # Optional — encrypts OAuth tokens at rest
 
 Controls the entire system:
 
-- **`llm`** — Model and token limits (default: `claude-sonnet-4-20250514`)
+- **`llm`** — Provider, model, and token limits. Supported providers: `anthropic` (default), `openai`, `lmstudio`, `codex`. The Codex provider uses OpenAI's Responses API to access Codex models (e.g., `codex-mini-latest`, `gpt-5-codex`, `gpt-5.2-codex`) and supports an optional `reasoningEffort` setting.
 - **`executors`** — Per-executor image, memory/CPU limits, timeouts, output caps. The web executor also specifies its domain allowlist here.
 - **`mounts`** — Host directory → container path mappings with read/write permissions. These define what the file and shell executors can see.
 - **`actionTiers`** — HITL classification rules. Ordered lists of tool + condition patterns for `autoApprove`, `notify`, and `requireApproval`.
@@ -235,7 +242,7 @@ Controls the entire system:
 - Node.js 22+
 - Docker and Docker Compose
 - A Telegram bot token (from [@BotFather](https://t.me/botfather))
-- An Anthropic API key
+- An LLM API key (Anthropic, OpenAI, or none for LM Studio)
 
 ### Setup
 
@@ -299,7 +306,7 @@ To enable Gmail, Calendar, or GitHub integrations:
 |-------|-----------|
 | Language | TypeScript 5.7, ES2022 |
 | Runtime | Node.js 22+ |
-| LLM | Anthropic Claude (Sonnet 4) |
+| LLM | Multi-provider: Anthropic Claude, OpenAI GPT, OpenAI Codex, LM Studio |
 | Bot framework | grammY (Telegram Bot API) |
 | Containers | Docker + Docker Compose |
 | Database | SQLite (better-sqlite3) with FTS5 |
