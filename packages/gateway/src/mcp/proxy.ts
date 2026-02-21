@@ -81,6 +81,11 @@ export class McpProxy {
   async start(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.server.listen(this.port, '0.0.0.0', () => {
+        // Update this.port with the actual bound port (important when configured as 0)
+        const addr = this.server.address();
+        if (addr && typeof addr === 'object' && !Array.isArray(addr)) {
+          this.port = addr.port;
+        }
         console.log(`[mcp-proxy] Listening on port ${this.port}`);
         resolve();
       });
@@ -135,7 +140,12 @@ export class McpProxy {
     }
   }
 
-  /** Get the proxy address for injection into container env vars. */
+  /** Get the actual port the proxy is listening on (after start). */
+  getPort(): number {
+    return this.port;
+  }
+
+  /** Get the proxy address for logging. Use getPort() + gateway IP for containers. */
   getAddress(): string {
     return `0.0.0.0:${this.port}`;
   }

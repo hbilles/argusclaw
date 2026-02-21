@@ -33,6 +33,8 @@ services:
       - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
       # Phase 8: MCP proxy port for domain-filtered outbound from MCP containers
       - MCP_PROXY_PORT=${MCP_PROXY_PORT:-0}
+      # Phase 8: MCP server credentials (resolved by "from_env" in secureclaw.yaml)
+      - FASTMAIL_API_TOKEN=${FASTMAIL_API_TOKEN:-}
     ports:
       # Phase 5: Web dashboard (localhost-only)
       - "127.0.0.1:3333:3333"

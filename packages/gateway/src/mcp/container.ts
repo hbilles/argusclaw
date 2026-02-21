@@ -17,6 +17,7 @@
  */
 
 import Docker from 'dockerode';
+import * as os from 'node:os';
 import { PassThrough } from 'node:stream';
 import type { McpServerConfig, MountConfig } from '../config.js';
 import type { McpProxy } from './proxy.js';
@@ -53,6 +54,9 @@ export class McpContainerManager {
   private restartCounts: Map<string, number> = new Map();
   private configs: Map<string, McpServerConfig> = new Map();
 
+  /** Cached gateway network info for attaching MCP containers. */
+  private gatewayNetwork: { name: string; gatewayIp: string } | null = null;
+
   constructor(docker: Docker, proxy: McpProxy | null) {
     this.docker = docker;
     this.proxy = proxy;
@@ -77,26 +81,40 @@ export class McpContainerManager {
     const hasNetwork = config.allowedDomains && config.allowedDomains.length > 0;
     const resolvedEnv = this.resolveEnvVars(config.env ?? {});
 
-    // Build the command + args
+    // Build the command + args.
+    // This becomes the Docker Cmd, which the image ENTRYPOINT receives as "$@".
+    // For network-enabled containers, the entrypoint (tini → entrypoint-mcp.sh)
+    // sets up iptables when HTTPS_PROXY is set, drops to non-root, then execs "$@".
+    // For no-network containers, the image entrypoint still runs but skips iptables.
     const cmd = [config.command, ...(config.args ?? [])];
+
+    // For network-enabled containers, discover the gateway's Docker network
+    // so MCP containers can reach the proxy running inside the gateway container.
+    let proxyUrl = '';
+    let gatewayNetworkName = '';
+    if (hasNetwork && this.proxy) {
+      const gw = await this.discoverGatewayNetwork();
+      gatewayNetworkName = gw.name;
+      proxyUrl = `http://${gw.gatewayIp}:${this.proxy.getPort()}`;
+      console.log(`[mcp-container] Proxy URL for ${serverName}: ${proxyUrl} (network: ${gatewayNetworkName})`);
+    }
 
     // Build container configuration with security constraints
     const containerConfig: Docker.ContainerCreateOptions = {
       Image: config.image,
-      Cmd: hasNetwork ? ['/entrypoint-mcp.sh'] : cmd,
+      Cmd: cmd,
       Env: [
         ...resolvedEnv,
-        // For network-enabled containers, pass the MCP command through env vars
-        // so the entrypoint can set up iptables first, then exec the MCP server.
+        // For network-enabled containers, set HTTPS_PROXY so the entrypoint
+        // knows to apply iptables rules and so the MCP server routes through the proxy.
         ...(hasNetwork ? [
-          `MCP_COMMAND=${config.command}`,
-          `MCP_ARGS=${JSON.stringify(config.args ?? [])}`,
-          `HTTPS_PROXY=http://${this.proxy?.getAddress() ?? 'localhost:8443'}`,
-          `HTTP_PROXY=http://${this.proxy?.getAddress() ?? 'localhost:8443'}`,
+          `HTTPS_PROXY=${proxyUrl}`,
+          `HTTP_PROXY=${proxyUrl}`,
           `NO_PROXY=localhost,127.0.0.1`,
+          `NODE_USE_ENV_PROXY=1`,
         ] : []),
       ],
-      WorkingDir: '/workspace',
+      WorkingDir: '/mcp',
       // Keep stdin open for JSON-RPC communication
       OpenStdin: true,
       StdinOnce: false,
@@ -117,8 +135,10 @@ export class McpContainerManager {
     if (hasNetwork) {
       // Network-enabled: needs NET_ADMIN for iptables, starts as root.
       // Entrypoint sets iptables rules then drops to non-root user.
+      // Attach to the gateway's Docker network so the container can reach the proxy.
       containerConfig.User = '0';
       containerConfig.NetworkDisabled = false;
+      containerConfig.HostConfig!.NetworkMode = gatewayNetworkName;
       containerConfig.HostConfig!.CapAdd = ['NET_ADMIN', 'SETUID', 'SETGID'];
       containerConfig.HostConfig!.CapDrop = ['ALL'];
       containerConfig.HostConfig!.Binds = [];
@@ -176,7 +196,9 @@ export class McpContainerManager {
         IPAddress?: string;
         Networks?: Record<string, { IPAddress?: string }>;
       };
+      // Check the specific network we attached to first, then fall back
       containerIp =
+        networkSettings?.Networks?.[gatewayNetworkName]?.IPAddress ??
         networkSettings?.IPAddress ??
         networkSettings?.Networks?.bridge?.IPAddress ??
         '';
@@ -387,6 +409,58 @@ export class McpContainerManager {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Discover the Docker network the gateway container is attached to.
+   *
+   * MCP containers must be on the same network to reach the proxy.
+   * We find the gateway by inspecting the current hostname (which Docker
+   * sets to the container ID) and looking up its network settings.
+   */
+  private async discoverGatewayNetwork(): Promise<{ name: string; gatewayIp: string }> {
+    if (this.gatewayNetwork) return this.gatewayNetwork;
+
+    const hostname = os.hostname();
+    console.log(`[mcp-container] Discovering gateway network (container: ${hostname})`);
+
+    try {
+      const gatewayContainer = this.docker.getContainer(hostname);
+      const inspect = await gatewayContainer.inspect();
+
+      // Cast to access the Networks map (dockerode types may not fully expose it)
+      const networkSettings = inspect.NetworkSettings as {
+        Networks?: Record<string, { IPAddress?: string }>;
+      };
+
+      const networks = networkSettings?.Networks ?? {};
+
+      // Find the compose network (not 'bridge', 'host', or 'none')
+      const entry = Object.entries(networks).find(
+        ([name]) => name !== 'bridge' && name !== 'host' && name !== 'none',
+      );
+
+      if (!entry || !entry[1]?.IPAddress) {
+        throw new Error(
+          `Could not find a suitable network. Available: ${Object.keys(networks).join(', ')}`,
+        );
+      }
+
+      this.gatewayNetwork = {
+        name: entry[0],
+        gatewayIp: entry[1].IPAddress,
+      };
+
+      console.log(
+        `[mcp-container] Gateway network: ${this.gatewayNetwork.name} ` +
+        `(IP: ${this.gatewayNetwork.gatewayIp})`,
+      );
+
+      return this.gatewayNetwork;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      throw new Error(`Failed to discover gateway network: ${error.message}`);
+    }
+  }
 
   /**
    * Resolve environment variables for an MCP server.

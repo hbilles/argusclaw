@@ -6,7 +6,7 @@
 # - Node.js 22 runtime for npx-based MCP servers
 # - iptables for network-restricted containers (outbound locked to proxy only)
 # - entrypoint script that applies iptables rules then drops to non-root
-# - Non-root user (mcpuser, UID 1000) for runtime execution
+# - Non-root user (node, UID 1000) for runtime execution
 #
 # Network modes:
 # - No-network: started with --network=none (filesystem MCP servers)
@@ -25,18 +25,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     ca-certificates \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for MCP server execution
-RUN groupadd -g 1000 mcpuser 2>/dev/null || true && \
-    useradd -u 1000 -g 1000 -m -s /bin/bash mcpuser 2>/dev/null || true
+# Use the existing 'node' user (UID 1000, GID 1000) from the base image.
+# This matches the other executor images and the container User constraint.
 
 # Copy the entrypoint script
 COPY packages/executor-mcp/entrypoint-mcp.sh /usr/local/bin/entrypoint-mcp.sh
 RUN chmod +x /usr/local/bin/entrypoint-mcp.sh
 
-# Create a working directory owned by mcpuser
-RUN mkdir -p /mcp && chown mcpuser:mcpuser /mcp
+# Create a working directory owned by node
+RUN mkdir -p /mcp && chown node:node /mcp
 WORKDIR /mcp
 
 # Use tini as PID 1 for proper signal handling

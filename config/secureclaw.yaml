@@ -214,6 +214,12 @@ mcpServers:
     transport: stdio
     allowedDomains:
       - api.fastmail.com
+      # npm infrastructure — needed for npx to download the MCP server package.
+      # These are read-only registries; the MCP server cannot exfiltrate through them.
+      - registry.npmjs.org
+      - github.com
+      - codeload.github.com
+      - objects.githubusercontent.com
     defaultTier: require-approval
     maxTools: 30
 

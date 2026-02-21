@@ -4,11 +4,11 @@
 # For containers with network access (HTTPS_PROXY is set):
 # 1. Parse the proxy address to get the Gateway proxy host:port
 # 2. Apply iptables rules: DROP all outbound except loopback, DNS, and proxy
-# 3. Drop privileges to mcpuser (UID 1000)
+# 3. Drop privileges to node (UID 1000)
 # 4. Exec the MCP server command
 #
 # For containers WITHOUT network (--network=none):
-# Simply drops to mcpuser and execs the command (no iptables needed).
+# Simply drops to node and execs the command (no iptables needed).
 
 set -euo pipefail
 
@@ -51,11 +51,11 @@ else
     echo "[entrypoint-mcp] No proxy configured — running without network restrictions"
 fi
 
-# Drop privileges to mcpuser and exec the MCP server command.
+# Drop privileges to node and exec the MCP server command.
 # The command is passed as arguments to this entrypoint (via Docker Cmd).
 if [ "$(id -u)" = "0" ]; then
-    echo "[entrypoint-mcp] Dropping to mcpuser (UID 1000)"
-    exec gosu mcpuser "$@"
+    echo "[entrypoint-mcp] Dropping to node (UID 1000)"
+    exec gosu node "$@"
 else
     # Already running as non-root
     exec "$@"
