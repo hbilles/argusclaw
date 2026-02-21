@@ -1,5 +1,9 @@
 # SecureClaw
 
+<p>
+  <img src="docs/images/secure-claw.jpg" width="512" alt="SecureClaw" />
+</p>
+
 A security-first personal AI agent framework in TypeScript. Security boundaries are enforced by the runtime — Docker containers, filesystem mounts, network policies — not by prompt instructions. A compromised LLM cannot escape its sandbox.
 
 ## Core Principles
@@ -147,6 +151,10 @@ User (Telegram) → Bridge → Gateway → LLM → [tool calls] → Executors �
 5. **Respond** — Tool results are fed back to the LLM for synthesis. The loop repeats (up to 10 iterations) until the LLM responds with plain text. The final response flows back through the bridge to Telegram. Every step is logged to the append-only audit trail.
 
 ### Multi-Step Tasks (Ralph Wiggum Loop)
+
+<p>
+  <img src="docs/images/ralph-wiggum-02.png" width="512" alt="Ralph Wiggum Loop" />
+</p>
 
 For complex tasks that would exceed the LLM's context window, the TaskLoop:
 
