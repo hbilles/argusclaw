@@ -35,6 +35,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY packages/executor-mcp/entrypoint-mcp.sh /usr/local/bin/entrypoint-mcp.sh
 RUN chmod +x /usr/local/bin/entrypoint-mcp.sh
 
+# Pre-build vendored MCP servers into the image.
+# This eliminates runtime npx downloads and reduces required network domains.
+COPY vendor/fastmail-mcp /opt/fastmail-mcp
+RUN cd /opt/fastmail-mcp && npm install --ignore-scripts && npm run build && npm cache clean --force
+
 # Create a working directory owned by node
 RUN mkdir -p /mcp && chown node:node /mcp
 WORKDIR /mcp

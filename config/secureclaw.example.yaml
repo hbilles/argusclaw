@@ -210,20 +210,15 @@ ownGitHubRepos: []
 mcpServers:
   - name: fastmail
     image: secureclaw-executor-mcp
-    command: npx
-    args: ["--yes", "github:MadLlama25/fastmail-mcp", "fastmail-mcp"]
+    command: node
+    args: ["/opt/fastmail-mcp/dist/index.js"]
     env:
       FASTMAIL_API_TOKEN: from_env
       FASTMAIL_BASE_URL: "https://api.fastmail.com"
     transport: stdio
     allowedDomains:
       - api.fastmail.com
-      # npm infrastructure — needed for npx to download the MCP server package.
-      # These are read-only registries; the MCP server cannot exfiltrate through them.
-      - registry.npmjs.org
-      - github.com
-      - codeload.github.com
-      - objects.githubusercontent.com
+      # npm domains no longer needed — package is pre-built in the Docker image.
     defaultTier: require-approval
     maxTools: 30
 

@@ -116,7 +116,7 @@ secure-claw/
 │   │       └── accessibility-tree.ts
 │   │
 │   ├── executor-mcp/        # Base image for MCP servers
-│   │   ├── Dockerfile               # node:22 + iptables + gosu + tini
+│   │   ├── Dockerfile               # node:22 + iptables + gosu + tini + vendored MCP builds
 │   │   └── entrypoint-mcp.sh       # iptables lockdown + privilege drop
 │   │
 │   └── shared/              # Shared types and utilities
@@ -125,6 +125,9 @@ secure-claw/
 │           ├── socket.ts            # Unix domain socket server/client (JSON-lines)
 │           └── capability-token.ts  # JWT mint/verify for capability tokens
 │
+├── vendor/
+│   └── fastmail-mcp/         # Forked MCP server (pre-built into executor-mcp image)
+│       └── src/                     # SDK upgraded to 1.x, defensive JMAP response parsing
 ├── config/
 │   ├── secureclaw.example.yaml  # Committed template config
 │   └── secureclaw.yaml          # Local runtime config (gitignored)
@@ -213,6 +216,8 @@ The LLM has access to these tools, each routed through the HITL gate:
 
 In addition to the built-in tools above, SecureClaw can dynamically discover tools from MCP (Model Context Protocol) servers configured in `secureclaw.yaml`. Each MCP server's tools are prefixed with `mcp_{serverName}__` to avoid collisions (e.g., `mcp_github__list_issues`, `mcp_slack__post_message`). MCP tools go through the same HITL gate as all other tools — each server has a configurable `defaultTier` that applies when no explicit YAML rule matches.
 
+MCP servers can be sourced from community packages or vendored locally in `vendor/`. Vendored servers are pre-built into the `executor-mcp` Docker image at build time, eliminating runtime `npx` downloads and reducing the outbound domain allowlist for the container. The Fastmail MCP server (`vendor/fastmail-mcp/`) is a fork of `github:MadLlama25/fastmail-mcp` with the MCP SDK upgraded to 1.x and defensive JMAP response parsing.
+
 ### `browse_web` Output Contract
 
 - Input parameter: `output_mode` (`compact` or `detailed`, default `compact`).
@@ -271,7 +276,7 @@ Every executor runs in a separate Docker container with:
 - Shell and File executors: `--network=none` (no network at all)
 - Web executor: iptables rules allowing only TCP 443 to resolved IPs of explicitly allowed domains. Private IP ranges (10.x, 172.16.x, 192.168.x) are blocked to prevent SSRF. DNS resolution goes through a custom proxy that enforces the domain allowlist.
 - MCP servers (no network): `--network=none`, same as shell/file executors
-- MCP servers (with network): iptables restrict all outbound to the Gateway's MCP proxy only. The proxy is an HTTP CONNECT proxy that filters each HTTPS tunnel request against the server's per-container domain allowlist. Direct outbound (bypassing the proxy) is impossible — iptables DROP rule blocks everything except loopback, DNS, and the proxy address.
+- MCP servers (with network): iptables restrict all outbound to the Gateway's MCP proxy only. The proxy is an HTTP CONNECT proxy that filters each HTTPS tunnel request against the server's per-container domain allowlist. Direct outbound (bypassing the proxy) is impossible — iptables DROP rule blocks everything except loopback, DNS, and the proxy address. Vendored MCP servers (pre-built into the image) need only their API domain in the allowlist (e.g., `api.fastmail.com`), with no npm registry or GitHub access required.
 - Gateway: Outbound HTTPS only (LLM API, Google APIs, GitHub API)
 - Bridge: Outbound to Telegram API only
 
@@ -324,7 +329,7 @@ Controls the entire system:
 - **`trustedDomains`** — Base domains that downgrade `browse_web` from require-approval to notify tier. Additional domains can be approved dynamically at runtime — when the agent visits an unlisted domain, the user is prompted to allow it for the session.
 - **`heartbeats`** — Cron schedules for proactive agent triggers with prompt templates.
 - **`oauth`** — Google, GitHub, and Codex OAuth client credentials for service integrations.
-- **`mcpServers`** — MCP server definitions. Each entry specifies a Docker image, command, optional allowed domains (for network access through the proxy), environment variables (`"from_env"` resolves from host env), mounts, resource limits, a `defaultTier` for HITL classification, and tool filters (`includeTools`, `excludeTools`, `maxTools`).
+- **`mcpServers`** — MCP server definitions. Each entry specifies a Docker image, command, optional allowed domains (for network access through the proxy), environment variables (`"from_env"` resolves from host env), mounts, resource limits, a `defaultTier` for HITL classification, and tool filters (`includeTools`, `excludeTools`, `maxTools`). Vendored servers (like Fastmail) use `command: node` with an absolute path to the pre-built dist (e.g., `args: ["/opt/fastmail-mcp/dist/index.js"]`), while community packages can still use `command: npx`.
 
 ## Getting Started
 
