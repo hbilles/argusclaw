@@ -45,6 +45,7 @@ import type { GmailService } from './services/gmail.js';
 import type { CalendarService } from './services/calendar.js';
 import type { GitHubService } from './services/github.js';
 import type { McpManager } from './mcp/manager.js';
+import type { SoulManager } from './soul.js';
 
 // ---------------------------------------------------------------------------
 // Tool Definitions (provider-agnostic)
@@ -227,6 +228,37 @@ const WEB_TOOLS: ToolDefinition[] = [
     },
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Soul Identity Tool
+// ---------------------------------------------------------------------------
+
+const SOUL_TOOLS: ToolDefinition[] = [
+  {
+    name: 'propose_soul_update',
+    description:
+      'Propose a change to your identity, values, or behavioral guidelines (SOUL.md). ' +
+      'Changes require human approval and take effect immediately upon approval. ' +
+      'Use when you observe a pattern suggesting your guidelines should evolve.',
+    parameters: {
+      type: 'object',
+      properties: {
+        proposed_content: {
+          type: 'string',
+          description: 'The full updated SOUL.md content',
+        },
+        rationale: {
+          type: 'string',
+          description: 'Why this change is warranted',
+        },
+      },
+      required: ['proposed_content', 'rationale'],
+    },
+  },
+];
+
+/** Set of soul tool names. */
+const SOUL_TOOL_NAMES = new Set(SOUL_TOOLS.map((t) => t.name));
 
 // ---------------------------------------------------------------------------
 // Phase 5: External Service Tools
@@ -454,6 +486,9 @@ export class Orchestrator {
   // Phase 8: MCP server integration
   private mcpManager: McpManager | null = null;
 
+  // Soul identity manager
+  private soulManager: SoulManager | null = null;
+
   /** All tools available — built dynamically based on connected services. */
   private allTools: ToolDefinition[] = [];
 
@@ -502,6 +537,12 @@ export class Orchestrator {
     this.rebuildToolList();
   }
 
+  /** Attach the SoulManager for identity tool support. */
+  setSoulManager(soulManager: SoulManager): void {
+    this.soulManager = soulManager;
+    this.rebuildToolList();
+  }
+
   /** Rebuild the tool list based on connected services. */
   private rebuildToolList(): void {
     this.allTools = [...EXECUTOR_TOOLS, ...MEMORY_TOOLS, ...WEB_TOOLS];
@@ -514,6 +555,11 @@ export class Orchestrator {
     }
     if (this.githubService?.isConnected()) {
       this.allTools.push(...GITHUB_TOOLS);
+    }
+
+    // Soul identity tool
+    if (this.soulManager) {
+      this.allTools.push(...SOUL_TOOLS);
     }
 
     // Phase 8: MCP ecosystem tools
@@ -673,6 +719,52 @@ export class Orchestrator {
               type: 'tool_result',
               toolCallId: toolCall.id,
               content: result,
+            });
+            continue;
+          }
+
+          // Soul identity tool — goes through HITL gate then applies update
+          if (SOUL_TOOL_NAMES.has(toolCall.name)) {
+            const gateResult = await this.hitlGate.gate({
+              sessionId,
+              userId: userId ?? chatId,
+              toolName: toolCall.name,
+              toolInput: input,
+              chatId,
+              reason,
+              planContext,
+            });
+
+            let resultContent: string;
+
+            if (gateResult.proceed) {
+              resultContent = this.handleSoulTool(toolCall.name, input, sessionId);
+              this.auditLogger.logToolResult(sessionId, {
+                toolCallId: toolCall.id,
+                toolName: toolCall.name,
+                tier: gateResult.tier,
+                success: true,
+              });
+            } else {
+              resultContent = `Soul update rejected by the user. The proposed identity change was not applied.`;
+              this.auditLogger.logSoulEvent('soul_update_cancelled', {
+                rationale: input['rationale'],
+                approvalId: gateResult.approvalId,
+              });
+              this.auditLogger.logToolResult(sessionId, {
+                toolCallId: toolCall.id,
+                toolName: toolCall.name,
+                tier: gateResult.tier,
+                success: false,
+                rejected: true,
+                approvalId: gateResult.approvalId,
+              });
+            }
+
+            toolResults.push({
+              type: 'tool_result',
+              toolCallId: toolCall.id,
+              content: resultContent,
             });
             continue;
           }
@@ -985,6 +1077,38 @@ export class Orchestrator {
   }
 
   // -------------------------------------------------------------------------
+  // Soul Tool Handling
+  // -------------------------------------------------------------------------
+
+  /**
+   * Handle the propose_soul_update tool.
+   * Called only after HITL approval.
+   */
+  private handleSoulTool(
+    toolName: string,
+    input: Record<string, unknown>,
+    sessionId: string,
+  ): string {
+    if (!this.soulManager) {
+      return 'Soul identity system is not available.';
+    }
+
+    if (toolName === 'propose_soul_update') {
+      const proposedContent = input['proposed_content'] as string;
+      const rationale = input['rationale'] as string;
+
+      if (!proposedContent || !rationale) {
+        return 'Error: proposed_content and rationale are both required.';
+      }
+
+      const version = this.soulManager.applySoulUpdate(proposedContent, rationale, sessionId);
+      return `Soul identity updated to version ${version.version}. The new identity is now active.`;
+    }
+
+    return `Unknown soul tool: ${toolName}`;
+  }
+
+  // -------------------------------------------------------------------------
   // Service Tool Handling (Phase 5)
   // -------------------------------------------------------------------------
 
@@ -1250,9 +1374,15 @@ export class Orchestrator {
   // -------------------------------------------------------------------------
 
   private getDefaultSystemPrompt(): string {
-    let prompt =
-      'You are SecureClaw, a personal AI assistant with the ability to interact with the ' +
-      'filesystem, run shell commands, browse the web, and manage email, calendar, and GitHub.\n\n' +
+    // Use soul content for identity if available
+    const soulContent = this.soulManager?.getContentSafe();
+
+    let prompt = soulContent
+      ? soulContent + '\n\n'
+      : 'You are SecureClaw, a personal AI assistant with the ability to interact with the ' +
+        'filesystem, run shell commands, browse the web, and manage email, calendar, and GitHub.\n\n';
+
+    prompt +=
       'You have access to tools that run in sandboxed Docker containers.\n\n' +
       'File paths should use the following mount points:\n' +
       '- /workspace — maps to the user\'s projects directory\n' +

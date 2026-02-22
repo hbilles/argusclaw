@@ -59,6 +59,7 @@ import { HeartbeatScheduler } from './scheduler.js';
 import { startDashboard, broadcastSSE } from './dashboard.js';
 // Phase 8: MCP server integration
 import { McpProxy, McpContainerManager, McpManager } from './mcp/index.js';
+import { SoulManager } from './soul.js';
 import { isComplexRequest } from './utils.js';
 
 function maskValue(value: string): string {
@@ -105,6 +106,10 @@ async function main(): Promise<void> {
   // Phase 4: Initialize memory store and prompt builder
   const memoryStore = new MemoryStore();
   const promptBuilder = new PromptBuilder(memoryStore);
+
+  // Initialize the SoulManager (identity file)
+  const soulManager = new SoulManager(config.soulFile!, auditLogger);
+  promptBuilder.setSoulManager(soulManager);
 
   const socketServer = new SocketServer();
 
@@ -194,6 +199,9 @@ async function main(): Promise<void> {
 
   // Attach memory to the orchestrator
   orchestrator.setMemory(memoryStore, promptBuilder);
+
+  // Attach soul manager to the orchestrator
+  orchestrator.setSoulManager(soulManager);
 
   // Wire service tools to orchestrator if available
   if (gmailService && calendarService && githubService) {
@@ -352,6 +360,7 @@ async function main(): Promise<void> {
     sessionManager,
     hitlGate,
     taskLoop,
+    soulManager,
   });
 
   // Connect audit logger to dashboard SSE for live streaming
@@ -844,6 +853,7 @@ async function main(): Promise<void> {
     }
     await socketServer.stop();
     sessionManager.dispose();
+    soulManager.close();
     auditLogger.close();
     approvalStore.close();
     memoryStore.close();

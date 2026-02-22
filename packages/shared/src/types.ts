@@ -50,7 +50,12 @@ export interface AuditEntry {
     | 'approval_requested'
     | 'approval_resolved'
     | 'mcp_proxy'
-    | 'mcp_tool_call';
+    | 'mcp_tool_call'
+    | 'soul_loaded'
+    | 'soul_tamper_detected'
+    | 'soul_update_proposed'
+    | 'soul_update_applied'
+    | 'soul_update_cancelled';
   sessionId: string;
   data: Record<string, unknown>;
 }

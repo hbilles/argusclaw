@@ -131,6 +131,11 @@ export class HITLGate {
       tier = mcpDefaultTier;
     }
 
+    // Soul update tool is hardcoded to require-approval — no overrides
+    if (toolName === 'propose_soul_update') {
+      tier = 'require-approval';
+    }
+
     // Phase 5: Override for trusted web domains
     // browse_web calls to trusted domains use "notify" tier instead of "require-approval"
     if (toolName === 'browse_web' && tier === 'require-approval') {
@@ -141,7 +146,8 @@ export class HITLGate {
     }
 
     // Session grant override: if a matching session grant exists, downgrade to notify
-    if (tier === 'require-approval' && this.checkSessionGrant(userId, toolName, toolInput)) {
+    // Soul updates are explicitly excluded — every call must be individually approved
+    if (tier === 'require-approval' && toolName !== 'propose_soul_update' && this.checkSessionGrant(userId, toolName, toolInput)) {
       tier = 'notify';
       console.log(`[hitl-gate] Session grant matched for ${toolName}, downgrading to notify`);
     }
@@ -469,6 +475,10 @@ function summarizeAction(toolName: string, toolInput: Record<string, unknown>): 
       return `Creating PR in ${toolInput['repo'] ?? 'unknown'}: "${toolInput['title'] ?? ''}"`;
     case 'read_file_github':
       return `Reading file from ${toolInput['repo'] ?? 'unknown'}: ${toolInput['path'] ?? 'unknown'}`;
+    case 'propose_soul_update': {
+      const rationale = String(toolInput['rationale'] ?? '');
+      return `Proposing soul identity update: ${rationale.length > 80 ? rationale.slice(0, 80) + '...' : rationale}`;
+    }
     default: {
       // Phase 8: MCP tools — parse prefix for readable summaries
       if (toolName.startsWith('mcp_') && toolName.includes('__')) {

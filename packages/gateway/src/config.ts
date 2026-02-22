@@ -164,6 +164,8 @@ export interface SecureClawConfig {
   };
   /** MCP server configurations (optional). */
   mcpServers?: McpServerConfig[];
+  /** Path to the SOUL.md identity file (relative to config directory or absolute). */
+  soulFile?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +317,14 @@ export function loadConfig(configPath?: string): SecureClawConfig {
       }
     }
   }
+
+  // Default soulFile path (resolved relative to config directory)
+  if (!config.soulFile) {
+    config.soulFile = './soul.md';
+  }
+  const configDir = path.dirname(path.resolve(filePath));
+  config.soulFile = path.resolve(configDir, config.soulFile);
+  console.log(`[config] Soul file: ${config.soulFile}`);
 
   console.log(`[config] Configuration loaded:`);
   console.log(`[config]   LLM model: ${config.llm.model}`);

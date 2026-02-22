@@ -13,6 +13,9 @@
  * - GET  /api/sessions             → Task sessions
  * - GET  /api/approvals            → Approval queue
  * - GET  /api/config               → Current config (read-only)
+ * - GET  /api/soul                 → Current soul content + hash
+ * - GET  /api/soul/history         → Soul version history
+ * - POST /api/soul/update          → Update soul content from web UI
  *
  * CRITICAL: Bound to 127.0.0.1 ONLY. Rejects non-localhost requests.
  * No authentication needed (localhost-only on your machine).
@@ -29,6 +32,7 @@ import type { Orchestrator } from './orchestrator.js';
 import type { SessionManager } from './session.js';
 import type { HITLGate } from './hitl-gate.js';
 import type { TaskLoop } from './loop.js';
+import type { SoulManager } from './soul.js';
 import type { ChatMessage } from './llm-provider.js';
 import { isComplexRequest, readBody, extractTextFromContent } from './utils.js';
 
@@ -50,6 +54,7 @@ export interface DashboardDeps {
   sessionManager: SessionManager;
   hitlGate: HITLGate;
   taskLoop: TaskLoop;
+  soulManager: SoulManager | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +179,60 @@ async function handleRequest(
   const approvalMatch = pathname.match(/^\/api\/approvals\/([^/]+)\/decide$/);
   if (req.method === 'POST' && approvalMatch) {
     await handleApprovalDecide(req, res, approvalMatch[1]!, deps);
+    return;
+  }
+
+  // ---- Soul API endpoints ----
+
+  if (pathname === '/api/soul' && req.method === 'GET') {
+    if (deps.soulManager) {
+      const content = deps.soulManager.getContentSafe();
+      const hash = deps.soulManager.getHash();
+      sendJSON(res, { content, hash });
+    } else {
+      sendJSON(res, { content: null, hash: null });
+    }
+    return;
+  }
+
+  if (pathname === '/api/soul/history' && req.method === 'GET') {
+    if (deps.soulManager) {
+      const history = deps.soulManager.getHistory();
+      sendJSON(res, history);
+    } else {
+      sendJSON(res, []);
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/soul/update') {
+    if (!deps.soulManager) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Soul manager not available' }));
+      return;
+    }
+
+    const body = await readBody(req);
+    let content: string;
+    let rationale: string;
+    try {
+      const parsed = JSON.parse(body);
+      content = parsed.content;
+      rationale = parsed.rationale;
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+      return;
+    }
+
+    if (!content || !rationale) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'content and rationale are required' }));
+      return;
+    }
+
+    const version = deps.soulManager.applySoulUpdate(content, rationale, 'web-dashboard');
+    sendJSON(res, version);
     return;
   }
 

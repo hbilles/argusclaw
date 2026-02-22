@@ -5,6 +5,7 @@ dist/
 *.sock
 *.tsbuildinfo
 .claude
+SOUL.md
 
 # Vendored package build artifacts (rebuilt inside Docker)
 vendor/*/package-lock.json

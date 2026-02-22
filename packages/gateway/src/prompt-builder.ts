@@ -15,6 +15,7 @@
  */
 
 import type { MemoryStore, Memory, TaskSession } from './memory.js';
+import type { SoulManager } from './soul.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,9 +30,15 @@ const MEMORY_CHAR_BUDGET = 8000;
 
 export class PromptBuilder {
   private memoryStore: MemoryStore;
+  private soulManager: SoulManager | null = null;
 
   constructor(memoryStore: MemoryStore) {
     this.memoryStore = memoryStore;
+  }
+
+  /** Attach the SoulManager for identity-aware prompts. */
+  setSoulManager(soulManager: SoulManager): void {
+    this.soulManager = soulManager;
   }
 
   /**
@@ -43,8 +50,9 @@ export class PromptBuilder {
   buildSystemPrompt(userMessage: string, userId: string): string {
     const sections: string[] = [];
 
-    // Base identity
+    // Base identity (from soul file or fallback)
     sections.push(
+      this.soulManager?.getContentSafe() ??
       'You are a personal AI assistant called SecureClaw. You are helpful, concise, and direct. ' +
       'You communicate via Telegram.',
     );
@@ -189,8 +197,9 @@ export class PromptBuilder {
   buildLoopPrompt(session: TaskSession, userId: string): string {
     const sections: string[] = [];
 
-    // Base identity
+    // Base identity (from soul file or fallback)
     sections.push(
+      this.soulManager?.getContentSafe() ??
       'You are a personal AI assistant called SecureClaw. You are helpful, concise, and direct. ' +
       'You communicate via Telegram.',
     );

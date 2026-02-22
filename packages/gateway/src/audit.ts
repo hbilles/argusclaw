@@ -175,6 +175,19 @@ export class AuditLogger {
     });
   }
 
+  /** Convenience: log a soul-related event (load, tamper, update). */
+  logSoulEvent(
+    type: 'soul_loaded' | 'soul_tamper_detected' | 'soul_update_proposed' | 'soul_update_applied' | 'soul_update_cancelled',
+    data: Record<string, unknown>,
+  ): void {
+    this.log({
+      timestamp: new Date(),
+      type,
+      sessionId: 'soul',
+      data,
+    });
+  }
+
   /** Close the current write stream. */
   close(): void {
     if (this.stream) {

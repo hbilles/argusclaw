@@ -27,6 +27,11 @@ document.addEventListener('alpine:init', () => {
     approvalsList: [],
     configText: '',
 
+    // Soul state
+    soulContent: '',
+    soulHistory: [],
+    soulHistoryExpanded: false,
+
     // SSE
     _eventSource: null,
 
@@ -322,6 +327,7 @@ document.addEventListener('alpine:init', () => {
       else if (name === 'memories') this.loadMemories();
       else if (name === 'sessions') this.loadSessions();
       else if (name === 'approvals') this.loadApprovals();
+      else if (name === 'soul') this.loadSoul();
       else if (name === 'config') this.loadConfig();
     },
 
@@ -365,6 +371,21 @@ document.addEventListener('alpine:init', () => {
         this.approvalsList = await res.json();
       } catch {
         this.approvalsList = [];
+      }
+    },
+
+    async loadSoul() {
+      try {
+        const [soulRes, historyRes] = await Promise.all([
+          fetch('/api/soul'),
+          fetch('/api/soul/history'),
+        ]);
+        const soul = await soulRes.json();
+        this.soulContent = soul.content || '';
+        this.soulHistory = (await historyRes.json()).map((v) => ({ ...v, _expanded: false }));
+      } catch {
+        this.soulContent = '';
+        this.soulHistory = [];
       }
     },
 
