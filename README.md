@@ -307,7 +307,7 @@ Controls the entire system:
 
 `config/secureclaw.yaml` is local runtime config (gitignored). Start from `config/secureclaw.example.yaml`.
 
-- **`llm`** — Provider, model, and token limits. Supported providers: `anthropic` (default), `openai`, `lmstudio`, `codex`. The Codex provider uses OpenAI's Responses API and supports optional `reasoningEffort` and `codexAuthMode` (`api-key` or `oauth`). In `oauth` mode, use a Codex model ID (for example `gpt-5-codex`, `gpt-5.1-codex`, or `gpt-5.2-codex`).
+- **`llm`** — Provider, model, and token limits. Supported providers: `anthropic` (default), `openai`, `lmstudio`, `codex`. The Codex provider uses OpenAI's Responses API and supports optional `reasoningEffort` and `codexAuthMode` (`api-key` or `oauth`). In `oauth` mode, use a Codex model ID (for example `gpt-5-codex`, `gpt-5.1-codex`, `gpt-5.2-codex`, or `gpt-5.3-codex`).
 - **`executors`** — Per-executor image, memory/CPU limits, timeouts, output caps. The web executor also specifies its domain allowlist and `resultFormat` (`structured` or `legacy`) here.
 - **`mounts`** — Host directory → container path mappings with read/write permissions. These define what the file and shell executors can see.
 - **`actionTiers`** — HITL classification rules. Ordered lists of tool + condition patterns for `autoApprove`, `notify`, and `requireApproval`.
@@ -384,7 +384,8 @@ To enable service integrations and Codex OAuth:
    - `oauth.google` / `oauth.github` for service tools
    - `oauth.openaiCodex.clientId` for Codex OAuth mode
 2. Set a strong `OAUTH_KEY` (or macOS Keychain entry) for token encryption-at-rest.
-3. If using Codex OAuth, set `llm.codexAuthMode: oauth` and `llm.model` to a Codex model ID (for example `gpt-5-codex`).
+3. If using Codex OAuth, set `llm.codexAuthMode: oauth` and `llm.model` to a Codex model ID (for example `gpt-5-codex` or `gpt-5.3-codex`).
+   - ChatGPT OAuth mode accepts Codex-family model IDs only; non-Codex IDs (and sometimes `codex-mini-latest`) are rejected.
 4. Start SecureClaw, then run `/connect codex` in Telegram and open the returned URL.
 5. If callback routing is blocked (e.g., VPS/remote browser), copy the final redirected URL and run:
    - `/connect codex callback <url-or-code>`
