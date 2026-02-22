@@ -25,7 +25,7 @@ import type { ApprovalStore } from './approval-store.js';
 import type { SecureClawConfig } from './config.js';
 
 const DASHBOARD_PORT = 3333;
-const DASHBOARD_HOST = '127.0.0.1';
+const DASHBOARD_HOST = process.env['DASHBOARD_HOST'] || '127.0.0.1';
 
 // ---------------------------------------------------------------------------
 // SSE Client Management
@@ -59,9 +59,16 @@ export function startDashboard(
 ): http.Server | null {
   try {
     const server = http.createServer((req, res) => {
-      // Security: reject non-localhost requests
-      const remoteAddr = req.socket.remoteAddress;
-      if (remoteAddr !== '127.0.0.1' && remoteAddr !== '::1' && remoteAddr !== '::ffff:127.0.0.1') {
+      // Security: reject non-localhost requests.
+      // When running inside Docker (DASHBOARD_HOST=0.0.0.0), also allow
+      // Docker bridge gateway traffic — host-side security is enforced by
+      // the docker-compose port binding (127.0.0.1:3333:3333).
+      const remoteAddr = req.socket.remoteAddress ?? '';
+      const isLocalhost = remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
+      const isDockerBridge = DASHBOARD_HOST === '0.0.0.0' && (
+        remoteAddr.startsWith('172.') || remoteAddr.startsWith('::ffff:172.')
+      );
+      if (!isLocalhost && !isDockerBridge) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden: Dashboard is localhost-only');
         return;
