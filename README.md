@@ -14,7 +14,7 @@ A security-first personal AI agent framework in TypeScript. Security boundaries 
 
 3. **Manager Blindness** — The Gateway (the "brain") never touches files, runs commands, or reads raw data directly. It plans and delegates. A prompt injection cannot gain direct tool access because the LLM process has no tools of its own.
 
-4. **Human-in-the-Loop Gate** — Irreversible actions (send email, write outside sandbox, create GitHub issues) require explicit user approval via Telegram inline buttons. Classification is performed in code by the Gateway, not self-reported by the LLM.
+4. **Human-in-the-Loop Gate** — Irreversible actions (send email, write outside sandbox, create GitHub issues) require explicit user approval via Telegram inline buttons or the web dashboard's chat interface. Classification is performed in code by the Gateway, not self-reported by the LLM.
 
 ## Architecture
 
@@ -23,7 +23,8 @@ A security-first personal AI agent framework in TypeScript. Security boundaries 
 │ INTERFACE                                                           │
 │ ┌────────────────────────────┐  ┌────────────────────────────────┐  │
 │ │ Telegram Bridge (grammY)   │  │ Web Dashboard (localhost)      │  │
-│ │ Long-polling · allowlist   │  │ SSE live audit · REST API      │  │
+│ │ Long-polling · allowlist   │  │ Chat UI · HITL approvals       │  │
+│ │                            │  │ Admin panels · SSE streaming   │  │
 │ └────────────────────────────┘  └────────────────────────────────┘  │
 │          Unix socket                       HTTP :3333               │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -55,6 +56,12 @@ The Gateway is the only process with LLM API keys, the Docker socket, and outbou
 secure-claw/
 ├── packages/
 │   ├── gateway/             # Central orchestrator (the only process with API keys)
+│   │   ├── public/                  # Static frontend files (served by dashboard)
+│   │   │   ├── index.html           # App shell — sidebar + chat + admin panels
+│   │   │   ├── css/styles.css       # Dark theme styles
+│   │   │   ├── js/app.js            # Alpine.js application (chat, SSE, admin)
+│   │   │   ├── js/markdown.js       # Minimal markdown-to-HTML renderer
+│   │   │   └── vendor/alpine.min.js # Vendored Alpine.js 3.x
 │   │   └── src/
 │   │       ├── index.ts             # Entrypoint — wires everything together
 │   │       ├── orchestrator.ts      # Agentic tool-use loop
@@ -66,9 +73,10 @@ secure-claw/
 │   │       ├── memory.ts            # SQLite-backed persistent memory (FTS5)
 │   │       ├── prompt-builder.ts    # Context-aware system prompt assembly
 │   │       ├── scheduler.ts         # Cron-based heartbeat triggers
-│   │       ├── dashboard.ts         # Localhost-only web UI (SSE + REST)
+│   │       ├── dashboard.ts         # Web dashboard server (chat API + admin REST + SSE)
 │   │       ├── audit.ts             # Append-only JSONL audit logger
 │   │       ├── config.ts            # YAML config loader + validation
+│   │       ├── utils.ts             # Shared utilities (complexity detection, HTTP helpers)
 │   │       ├── llm-provider.ts      # Provider-agnostic LLM interface
 │   │       ├── approval-store.ts    # SQLite approval persistence
 │   │       ├── providers/
@@ -130,17 +138,19 @@ secure-claw/
 ### Message Lifecycle
 
 ```
-User (Telegram) → Bridge → Gateway → LLM → [tool calls] → Executors → LLM → Bridge → User
+User (Telegram/Web) → Bridge/Dashboard → Gateway → LLM → [tool calls] → Executors → LLM → User
 ```
 
-1. **Receive** — The Telegram Bridge polls the Bot API via grammY. It validates the sender's user ID against the allowlist and converts the Telegram message into an internal `Message` format. The message is sent to the Gateway over a Unix domain socket (JSON-lines protocol).
+1. **Receive** — Messages arrive from one of two interfaces:
+   - **Telegram**: The Bridge polls the Bot API via grammY, validates the sender against the allowlist, and sends the message to the Gateway over a Unix domain socket (JSON-lines protocol).
+   - **Web Dashboard**: The user sends a message via the chat UI at `http://localhost:3333`. The dashboard calls the orchestrator directly (in-process) and streams events back via Server-Sent Events.
 
 2. **Plan** — The Gateway loads the user's session and relevant memories, assembles a system prompt (with memories, available tools, and session context), and sends it to the configured LLM provider. The LLM responds with either a text reply or tool call blocks.
 
 3. **Gate** — For each tool call, the HITL Gate classifies the action into one of three tiers based on the tool name and its inputs (path patterns, working directory, etc.):
    - **auto-approve**: Safe read operations (read file, search, list directory, search email)
    - **notify**: Moderate-risk operations (write to sandbox, browse trusted domains) — executes and notifies the user
-   - **require-approval**: Irreversible actions (send email, write outside sandbox, create GitHub issue) — pauses execution and sends an inline-keyboard approval request to Telegram
+   - **require-approval**: Irreversible actions (send email, write outside sandbox, create GitHub issue) — pauses execution and sends an approval request to both Telegram (inline keyboard) and the web dashboard (inline buttons). The first response from either channel wins.
 
    If the user selects **Allow for Session** on an approval request, future matching actions in the same session are automatically downgraded to `notify` tier.
 
@@ -277,7 +287,7 @@ The executor runtime validates the token before executing anything.
 
 ### L4 — Human-in-the-Loop Gate
 
-Actions are classified by the Gateway in code, not by the LLM. The classification rules in `secureclaw.yaml` match on tool name and input field patterns (e.g., path glob, working directory). If no rule matches, the default is **require-approval** (fail-safe). For MCP tools, the priority chain is: explicit YAML rule > server's `defaultTier` config > fail-safe `require-approval`. Approval requests are sent to Telegram with three options: **Approve** (one-time), **Allow for Session** (auto-approve matching actions for the remainder of the session), or **Reject**. Session grants expire when the user's session ends.
+Actions are classified by the Gateway in code, not by the LLM. The classification rules in `secureclaw.yaml` match on tool name and input field patterns (e.g., path glob, working directory). If no rule matches, the default is **require-approval** (fail-safe). For MCP tools, the priority chain is: explicit YAML rule > server's `defaultTier` config > fail-safe `require-approval`. Approval requests are sent to both Telegram (inline keyboard) and the web dashboard (inline buttons) simultaneously, with three options: **Approve** (one-time), **Allow for Session** (auto-approve matching actions for the remainder of the session), or **Reject**. The first response from either channel resolves the request. Session grants expire when the user's session ends.
 
 Web content trust boundary:
 - Structured `browse_web` payloads include explicit untrusted-content markers in the `security` field.
@@ -355,12 +365,21 @@ Runs the gateway and bridge-telegram concurrently with watch mode via `concurren
 
 ### Web Dashboard
 
-Available at `http://127.0.0.1:3333` when the gateway is running. Provides:
-- Live audit log stream (SSE)
-- Memory browser
-- Task session viewer
-- Approval queue
-- Configuration viewer (read-only)
+Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only, no authentication). The dashboard provides a full chat interface for interacting with the SecureClaw agent, plus admin panels accessible from the sidebar.
+
+**Chat Interface** (primary view):
+- Send messages and receive streamed responses with real-time tool activity
+- Tool calls displayed as collapsible cards showing tool name and parameters
+- Inline HITL approval: Approve, Allow for Session, or Reject — same as Telegram
+- Chat history persists across page reloads (within the session TTL)
+- New Chat button to reset the conversation
+
+**Admin Panels** (sidebar navigation):
+- **Audit Log** — Live-streaming audit entries (SSE) with date and type filters
+- **Memories** — Browse stored memories grouped by category
+- **Sessions** — View active and recent task sessions
+- **Approvals** — Approval request history with status
+- **Config** — Current configuration viewer (read-only, secrets redacted)
 
 ### Telegram Commands
 
@@ -398,6 +417,7 @@ To enable service integrations and Codex OAuth:
 | Runtime | Node.js 22+ |
 | LLM | Multi-provider: Anthropic Claude, OpenAI GPT, OpenAI Codex, LM Studio |
 | Bot framework | grammY (Telegram Bot API) |
+| Web UI | Alpine.js (vendored, no build step) |
 | Containers | Docker + Docker Compose |
 | Database | SQLite (better-sqlite3) with FTS5 |
 | Browser automation | Playwright (Chromium) |

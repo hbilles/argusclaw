@@ -1,19 +1,21 @@
 /**
- * Web Dashboard — simple localhost-only web interface for SecureClaw.
+ * Web Dashboard — localhost-only web interface for SecureClaw.
  *
- * Serves static HTML/CSS/JS and provides REST/SSE API endpoints:
- * - GET /                    → Main HTML page
- * - GET /api/audit           → Audit log entries (paginated)
- * - GET /api/audit/stream    → SSE live audit stream
- * - GET /api/memories        → All memories
- * - GET /api/sessions        → Task sessions
- * - GET /api/approvals       → Approval queue
- * - GET /api/config          → Current config (read-only)
+ * Serves the chat UI and admin panels, plus REST/SSE API endpoints:
+ * - GET  /                         → Main HTML page (static)
+ * - POST /api/chat                 → Send message, returns per-request SSE stream
+ * - POST /api/chat/reset           → Reset web session
+ * - GET  /api/chat/history         → Chat history for page reload
+ * - POST /api/approvals/:id/decide → Submit approval decision
+ * - GET  /api/audit                → Audit log entries (paginated)
+ * - GET  /api/audit/stream         → SSE live audit stream
+ * - GET  /api/memories             → All memories
+ * - GET  /api/sessions             → Task sessions
+ * - GET  /api/approvals            → Approval queue
+ * - GET  /api/config               → Current config (read-only)
  *
  * CRITICAL: Bound to 127.0.0.1 ONLY. Rejects non-localhost requests.
  * No authentication needed (localhost-only on your machine).
- *
- * Phase 5: Initial implementation.
  */
 
 import * as http from 'node:http';
@@ -23,9 +25,32 @@ import type { AuditLogger } from './audit.js';
 import type { MemoryStore } from './memory.js';
 import type { ApprovalStore } from './approval-store.js';
 import type { SecureClawConfig } from './config.js';
+import type { Orchestrator } from './orchestrator.js';
+import type { SessionManager } from './session.js';
+import type { HITLGate } from './hitl-gate.js';
+import type { TaskLoop } from './loop.js';
+import type { ChatMessage } from './llm-provider.js';
+import { isComplexRequest, readBody, extractTextFromContent } from './utils.js';
 
 const DASHBOARD_PORT = 3333;
 const DASHBOARD_HOST = process.env['DASHBOARD_HOST'] || '127.0.0.1';
+const WEB_USER_ID = 'web-user';
+const WEB_CHAT_ID = 'web';
+
+// ---------------------------------------------------------------------------
+// Dashboard Dependencies
+// ---------------------------------------------------------------------------
+
+export interface DashboardDeps {
+  auditLogger: AuditLogger;
+  memoryStore: MemoryStore;
+  approvalStore: ApprovalStore;
+  config: SecureClawConfig;
+  orchestrator: Orchestrator;
+  sessionManager: SessionManager;
+  hitlGate: HITLGate;
+  taskLoop: TaskLoop;
+}
 
 // ---------------------------------------------------------------------------
 // SSE Client Management
@@ -51,18 +76,10 @@ export function broadcastSSE(event: string, data: unknown): void {
 // Dashboard Server
 // ---------------------------------------------------------------------------
 
-export function startDashboard(
-  auditLogger: AuditLogger,
-  memoryStore: MemoryStore,
-  approvalStore: ApprovalStore,
-  config: SecureClawConfig,
-): http.Server | null {
+export function startDashboard(deps: DashboardDeps): http.Server | null {
   try {
-    const server = http.createServer((req, res) => {
+    const server = http.createServer(async (req, res) => {
       // Security: reject non-localhost requests.
-      // When running inside Docker (DASHBOARD_HOST=0.0.0.0), also allow
-      // Docker bridge gateway traffic — host-side security is enforced by
-      // the docker-compose port binding (127.0.0.1:3333:3333).
       const remoteAddr = req.socket.remoteAddress ?? '';
       const isLocalhost = remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
       const isDockerBridge = DASHBOARD_HOST === '0.0.0.0' && (
@@ -76,7 +93,7 @@ export function startDashboard(
 
       // CORS headers for local development
       res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3333');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
       if (req.method === 'OPTIONS') {
@@ -88,12 +105,14 @@ export function startDashboard(
       const url = new URL(req.url || '/', `http://${req.headers.host}`);
 
       try {
-        handleRequest(url, req, res, auditLogger, memoryStore, approvalStore, config);
+        await handleRequest(url, req, res, deps);
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         console.error('[dashboard] Request error:', error.message);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: error.message }));
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: error.message }));
+        }
       }
     });
 
@@ -117,18 +136,49 @@ export function startDashboard(
 // Request Handler
 // ---------------------------------------------------------------------------
 
-function handleRequest(
+async function handleRequest(
   url: URL,
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  auditLogger: AuditLogger,
-  memoryStore: MemoryStore,
-  approvalStore: ApprovalStore,
-  config: SecureClawConfig,
-): void {
+  deps: DashboardDeps,
+): Promise<void> {
   const pathname = url.pathname;
 
-  // API endpoints
+  // ---- Chat API endpoints ----
+
+  if (req.method === 'POST' && pathname === '/api/chat') {
+    await handleChat(req, res, deps);
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/chat/reset') {
+    const session = deps.sessionManager.get(WEB_USER_ID);
+    if (session) {
+      deps.sessionManager.setMessages(WEB_USER_ID, []);
+    }
+    sendJSON(res, { ok: true });
+    return;
+  }
+
+  if (pathname === '/api/chat/history') {
+    const session = deps.sessionManager.get(WEB_USER_ID);
+    const messages = (session?.messages ?? []).map((m) => ({
+      role: m.role,
+      content: extractTextFromContent(m.content),
+    }));
+    sendJSON(res, { messages, sessionId: session?.id });
+    return;
+  }
+
+  // Approval decision endpoint: POST /api/approvals/:id/decide
+  const approvalMatch = pathname.match(/^\/api\/approvals\/([^/]+)\/decide$/);
+  if (req.method === 'POST' && approvalMatch) {
+    await handleApprovalDecide(req, res, approvalMatch[1]!, deps);
+    return;
+  }
+
+  // ---- Existing admin API endpoints ----
+
   if (pathname === '/api/audit') {
     handleAuditAPI(url, res);
     return;
@@ -140,48 +190,45 @@ function handleRequest(
   }
 
   if (pathname === '/api/memories') {
-    const memories = memoryStore.getAll();
+    const memories = deps.memoryStore.getAll();
     sendJSON(res, memories);
     return;
   }
 
   if (pathname === '/api/sessions') {
-    // Get sessions for a specific user, or all users via direct query
     const userId = url.searchParams.get('userId');
     if (userId) {
-      const sessions = memoryStore.getRecentSessions(userId, 50);
+      const sessions = deps.memoryStore.getRecentSessions(userId, 50);
       sendJSON(res, sessions);
     } else {
-      // No userId filter — get all recent sessions
-      const sessions = memoryStore.getAllRecentSessions(50);
+      const sessions = deps.memoryStore.getAllRecentSessions(50);
       sendJSON(res, sessions);
     }
     return;
   }
 
   if (pathname === '/api/approvals') {
-    const approvals = approvalStore.getRecent(50);
+    const approvals = deps.approvalStore.getRecent(50);
     sendJSON(res, approvals);
     return;
   }
 
   if (pathname === '/api/config') {
-    // Return sanitized config (no secrets)
     const sanitized = {
-      llm: config.llm,
+      llm: deps.config.llm,
       executors: {
-        shell: { ...config.executors.shell },
-        file: { ...config.executors.file },
-        web: { ...config.executors.web },
+        shell: { ...deps.config.executors.shell },
+        file: { ...deps.config.executors.file },
+        web: { ...deps.config.executors.web },
       },
-      mounts: config.mounts.map((m) => ({
+      mounts: deps.config.mounts.map((m) => ({
         name: m.name,
         containerPath: m.containerPath,
         readOnly: m.readOnly,
       })),
-      actionTiers: config.actionTiers,
-      trustedDomains: config.trustedDomains,
-      heartbeats: config.heartbeats,
+      actionTiers: deps.config.actionTiers,
+      trustedDomains: deps.config.trustedDomains,
+      heartbeats: deps.config.heartbeats,
     };
     sendJSON(res, sanitized);
     return;
@@ -189,6 +236,221 @@ function handleRequest(
 
   // Static file serving
   serveStatic(pathname, res);
+}
+
+// ---------------------------------------------------------------------------
+// Chat API
+// ---------------------------------------------------------------------------
+
+/** Track whether the web user is currently processing a message. */
+let chatBusy = false;
+
+async function handleChat(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  deps: DashboardDeps,
+): Promise<void> {
+  const body = await readBody(req);
+  let content: string;
+  try {
+    const parsed = JSON.parse(body);
+    content = parsed.content;
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+    return;
+  }
+
+  if (!content || typeof content !== 'string') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing content field' }));
+    return;
+  }
+
+  if (chatBusy) {
+    res.writeHead(409, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'A message is already being processed' }));
+    return;
+  }
+
+  chatBusy = true;
+
+  // Set SSE headers for per-request streaming
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  const sendEvent = (event: string, data: unknown) => {
+    try {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch {
+      // Client disconnected
+    }
+  };
+
+  const session = deps.sessionManager.getOrCreate(WEB_USER_ID);
+
+  // Log message received
+  deps.auditLogger.logMessageReceived(session.id, {
+    userId: WEB_USER_ID,
+    content,
+    source: 'web',
+  });
+
+  sendEvent('chat:thinking', { status: 'processing' });
+
+  // Register audit hook scoped to this session for streaming events
+  const unhook = deps.auditLogger.addHook((entry) => {
+    if (entry['sessionId'] !== session.id) return;
+    const type = entry['type'] as string;
+
+    if (type === 'tool_call') {
+      sendEvent('chat:tool_call', entry['data']);
+    } else if (type === 'tool_result') {
+      sendEvent('chat:tool_result', entry['data']);
+    } else if (type === 'approval_requested') {
+      sendEvent('chat:approval_request', entry['data']);
+    } else if (type === 'approval_resolved') {
+      sendEvent('chat:approval_resolved', entry['data']);
+    }
+  });
+
+  try {
+    // Check for active task session
+    const activeTaskSession = deps.memoryStore.getActiveSession(WEB_USER_ID);
+
+    if (!activeTaskSession && isComplexRequest(content)) {
+      // Complex request → task loop
+      console.log(`[dashboard] Complex request detected — starting task loop`);
+
+      const loopResult = await deps.taskLoop.execute(
+        WEB_USER_ID,
+        content,
+        WEB_CHAT_ID,
+        session.id,
+      );
+
+      sendEvent('chat:message', {
+        role: 'assistant',
+        content: loopResult.text,
+      });
+
+      deps.auditLogger.logMessageSent(session.id, {
+        chatId: WEB_CHAT_ID,
+        contentLength: loopResult.text.length,
+        taskSessionId: loopResult.sessionId,
+        iterations: loopResult.iterations,
+        completed: loopResult.completed,
+      });
+    } else {
+      // Normal conversation
+      const chatMessages = session.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })) as ChatMessage[];
+
+      chatMessages.push({ role: 'user', content });
+
+      const result = await deps.orchestrator.chat(
+        session.id,
+        chatMessages,
+        WEB_CHAT_ID,
+        WEB_USER_ID,
+      );
+
+      // Handle [CONTINUE] marker
+      if (result.text.includes('[CONTINUE]')) {
+        const cleanText = result.text.replace('[CONTINUE]', '').trim();
+
+        deps.sessionManager.setMessages(
+          WEB_USER_ID,
+          result.messages as Array<{ role: 'user' | 'assistant'; content: unknown }>,
+        );
+
+        sendEvent('chat:message', {
+          role: 'assistant',
+          content: cleanText,
+        });
+
+        // Start task loop for continuation
+        const loopResult = await deps.taskLoop.execute(
+          WEB_USER_ID,
+          content,
+          WEB_CHAT_ID,
+          session.id,
+        );
+
+        sendEvent('chat:message', {
+          role: 'assistant',
+          content: loopResult.text,
+        });
+      } else {
+        // Normal response
+        deps.sessionManager.setMessages(
+          WEB_USER_ID,
+          result.messages as Array<{ role: 'user' | 'assistant'; content: unknown }>,
+        );
+
+        sendEvent('chat:message', {
+          role: 'assistant',
+          content: result.text,
+        });
+
+        deps.auditLogger.logMessageSent(session.id, {
+          chatId: WEB_CHAT_ID,
+          contentLength: result.text.length,
+        });
+      }
+    }
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error('[dashboard] Chat error:', error.message);
+
+    deps.auditLogger.logError(session.id, {
+      error: error.message,
+      stack: error.stack,
+    });
+
+    sendEvent('chat:error', { error: error.message });
+  } finally {
+    unhook();
+    chatBusy = false;
+    sendEvent('chat:done', {});
+    res.end();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Approval Decision API
+// ---------------------------------------------------------------------------
+
+async function handleApprovalDecide(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  approvalId: string,
+  deps: DashboardDeps,
+): Promise<void> {
+  const body = await readBody(req);
+  let decision: 'approved' | 'rejected' | 'session-approved';
+  try {
+    const parsed = JSON.parse(body);
+    decision = parsed.decision;
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+    return;
+  }
+
+  if (!['approved', 'rejected', 'session-approved'].includes(decision)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid decision value' }));
+    return;
+  }
+
+  deps.hitlGate.resolveApproval(approvalId, decision);
+  sendJSON(res, { ok: true, approvalId, decision });
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +484,6 @@ function handleAuditAPI(url: URL, res: http.ServerResponse): void {
     })
     .filter((entry): entry is Record<string, unknown> => entry !== null);
 
-  // Apply filters
   if (type) {
     entries = entries.filter((e) => e['type'] === type);
   }
@@ -230,7 +491,6 @@ function handleAuditAPI(url: URL, res: http.ServerResponse): void {
     entries = entries.filter((e) => e['sessionId'] === sessionId);
   }
 
-  // Return most recent entries first, limited
   entries = entries.reverse().slice(0, limit);
   sendJSON(res, entries);
 }
@@ -249,7 +509,6 @@ function handleAuditStream(
     'Connection': 'keep-alive',
   });
 
-  // Send initial connection event
   res.write(`event: connected\ndata: {"time":"${new Date().toISOString()}"}\n\n`);
 
   sseClients.add(res);
@@ -290,9 +549,8 @@ function serveStatic(pathname: string, res: http.ServerResponse): void {
   }
 
   if (!fs.existsSync(filePath)) {
-    // Fall back to serving the inline dashboard HTML
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(getDashboardHTML());
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
     return;
   }
 
@@ -311,247 +569,4 @@ function serveStatic(pathname: string, res: http.ServerResponse): void {
 function sendJSON(res: http.ServerResponse, data: unknown): void {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
-}
-
-// ---------------------------------------------------------------------------
-// Inline Dashboard HTML (fallback when no static files)
-// ---------------------------------------------------------------------------
-
-function getDashboardHTML(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SecureClaw Dashboard</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; }
-    .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
-    .header h1 { font-size: 20px; color: #f0f6fc; }
-    .header .badge { background: #238636; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
-    .nav { display: flex; gap: 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 0 24px; }
-    .nav button { background: none; border: none; color: #8b949e; padding: 12px 16px; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; transition: all 0.2s; }
-    .nav button:hover { color: #c9d1d9; }
-    .nav button.active { color: #f0f6fc; border-bottom-color: #f78166; }
-    .content { padding: 24px; max-width: 1400px; margin: 0 auto; }
-    .panel { display: none; }
-    .panel.active { display: block; }
-    .card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; margin-bottom: 16px; overflow: hidden; }
-    .card-header { padding: 12px 16px; border-bottom: 1px solid #30363d; font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
-    .card-body { padding: 16px; }
-    .card-body pre { white-space: pre-wrap; word-break: break-all; font-size: 13px; line-height: 1.5; font-family: 'SF Mono', Monaco, Consolas, monospace; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #21262d; font-size: 13px; }
-    th { color: #8b949e; font-weight: 600; }
-    .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
-    .tag-blue { background: #1f6feb33; color: #58a6ff; }
-    .tag-green { background: #23863633; color: #3fb950; }
-    .tag-red { background: #da363333; color: #f85149; }
-    .tag-yellow { background: #9e6a0333; color: #d29922; }
-    .tag-purple { background: #8957e533; color: #bc8cff; }
-    .tag-gray { background: #30363d; color: #8b949e; }
-    .filters { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-    .filters select, .filters input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 12px; border-radius: 6px; font-size: 13px; }
-    .empty { text-align: center; padding: 40px; color: #8b949e; }
-    .expandable { cursor: pointer; }
-    .expandable:hover { background: #1c2128; }
-    .expand-content { display: none; padding: 12px 16px; background: #0d1117; border-top: 1px solid #21262d; }
-    .expand-content.open { display: block; }
-    .live-indicator { display: inline-block; width: 8px; height: 8px; background: #3fb950; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-    .memory-category { margin-bottom: 20px; }
-    .memory-category h3 { font-size: 14px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
-    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-    .status-active { background: #3fb950; }
-    .status-completed { background: #58a6ff; }
-    .status-failed { background: #f85149; }
-    .status-pending { background: #d29922; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>SecureClaw</h1>
-    <span class="badge">Dashboard</span>
-  </div>
-  <div class="nav">
-    <button class="active" onclick="showPanel('audit')">Audit Log</button>
-    <button onclick="showPanel('memories')">Memories</button>
-    <button onclick="showPanel('sessions')">Sessions</button>
-    <button onclick="showPanel('approvals')">Approvals</button>
-    <button onclick="showPanel('config')">Config</button>
-  </div>
-  <div class="content">
-    <!-- Audit Log Panel -->
-    <div id="panel-audit" class="panel active">
-      <div class="filters">
-        <input type="date" id="audit-date" onchange="loadAudit()">
-        <select id="audit-type" onchange="loadAudit()">
-          <option value="">All Types</option>
-          <option value="message_received">Message Received</option>
-          <option value="llm_request">LLM Request</option>
-          <option value="llm_response">LLM Response</option>
-          <option value="tool_call">Tool Call</option>
-          <option value="tool_result">Tool Result</option>
-          <option value="action_classified">Action Classified</option>
-          <option value="approval_requested">Approval Requested</option>
-          <option value="approval_resolved">Approval Resolved</option>
-          <option value="message_sent">Message Sent</option>
-          <option value="error">Error</option>
-        </select>
-        <span><span class="live-indicator"></span>Live streaming</span>
-      </div>
-      <div id="audit-entries"></div>
-    </div>
-
-    <!-- Memories Panel -->
-    <div id="panel-memories" class="panel">
-      <div id="memory-list"></div>
-    </div>
-
-    <!-- Sessions Panel -->
-    <div id="panel-sessions" class="panel">
-      <div id="session-list"></div>
-    </div>
-
-    <!-- Approvals Panel -->
-    <div id="panel-approvals" class="panel">
-      <div id="approval-list"></div>
-    </div>
-
-    <!-- Config Panel -->
-    <div id="panel-config" class="panel">
-      <div class="card">
-        <div class="card-header">Current Configuration (read-only)</div>
-        <div class="card-body"><pre id="config-content"></pre></div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const typeColors = {
-      message_received: 'blue', llm_request: 'purple', llm_response: 'purple',
-      tool_call: 'yellow', tool_result: 'green', action_classified: 'gray',
-      approval_requested: 'red', approval_resolved: 'green', message_sent: 'blue', error: 'red',
-    };
-
-    function showPanel(name) {
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
-      document.getElementById('panel-' + name).classList.add('active');
-      event.target.classList.add('active');
-      if (name === 'memories') loadMemories();
-      if (name === 'sessions') loadSessions();
-      if (name === 'approvals') loadApprovals();
-      if (name === 'config') loadConfig();
-    }
-
-    // Audit
-    async function loadAudit() {
-      const date = document.getElementById('audit-date').value || new Date().toISOString().split('T')[0];
-      const type = document.getElementById('audit-type').value;
-      let url = '/api/audit?date=' + date;
-      if (type) url += '&type=' + type;
-      const res = await fetch(url);
-      const entries = await res.json();
-      renderAudit(entries);
-    }
-
-    function renderAudit(entries) {
-      const container = document.getElementById('audit-entries');
-      if (entries.length === 0) {
-        container.innerHTML = '<div class="empty">No audit entries found</div>';
-        return;
-      }
-      container.innerHTML = entries.map((e, i) => {
-        const color = typeColors[e.type] || 'gray';
-        const time = new Date(e.timestamp).toLocaleTimeString();
-        const dataStr = JSON.stringify(e.data, null, 2);
-        return '<div class="card"><div class="card-header expandable" onclick="toggleExpand(' + i + ')">' +
-          '<span><span class="tag tag-' + color + '">' + e.type + '</span> ' + time + '</span>' +
-          '<span style="color:#8b949e;font-size:12px">' + (e.sessionId || '').slice(0, 8) + '</span></div>' +
-          '<div id="expand-' + i + '" class="expand-content"><pre>' + escapeHtml(dataStr) + '</pre></div></div>';
-      }).join('');
-    }
-
-    function toggleExpand(i) {
-      document.getElementById('expand-' + i).classList.toggle('open');
-    }
-
-    // SSE
-    const evtSource = new EventSource('/api/audit/stream');
-    evtSource.addEventListener('audit', (e) => {
-      const entry = JSON.parse(e.data);
-      const container = document.getElementById('audit-entries');
-      const color = typeColors[entry.type] || 'gray';
-      const time = new Date(entry.timestamp).toLocaleTimeString();
-      const idx = 'live-' + Date.now();
-      const html = '<div class="card" style="border-color:#238636"><div class="card-header expandable" onclick="document.getElementById(\\'' + idx + '\\').classList.toggle(\\'open\\')">' +
-        '<span><span class="tag tag-' + color + '">' + entry.type + '</span> ' + time + ' <span class="live-indicator"></span></span></div>' +
-        '<div id="' + idx + '" class="expand-content"><pre>' + escapeHtml(JSON.stringify(entry.data, null, 2)) + '</pre></div></div>';
-      container.insertAdjacentHTML('afterbegin', html);
-    });
-
-    // Memories
-    async function loadMemories() {
-      const res = await fetch('/api/memories');
-      const memories = await res.json();
-      const container = document.getElementById('memory-list');
-      if (memories.length === 0) { container.innerHTML = '<div class="empty">No memories stored</div>'; return; }
-      const grouped = {};
-      memories.forEach(m => { (grouped[m.category] = grouped[m.category] || []).push(m); });
-      container.innerHTML = Object.entries(grouped).map(([cat, items]) =>
-        '<div class="memory-category"><h3>' + cat + '</h3>' +
-        items.map(m => '<div class="card"><div class="card-header">' + escapeHtml(m.topic) +
-          '<span style="color:#8b949e;font-size:12px">' + new Date(m.updatedAt).toLocaleDateString() + '</span></div>' +
-          '<div class="card-body"><pre>' + escapeHtml(m.content) + '</pre></div></div>').join('') + '</div>'
-      ).join('');
-    }
-
-    // Sessions
-    async function loadSessions() {
-      const res = await fetch('/api/sessions');
-      const sessions = await res.json();
-      const container = document.getElementById('session-list');
-      if (sessions.length === 0) { container.innerHTML = '<div class="empty">No sessions</div>'; return; }
-      container.innerHTML = '<table><tr><th>Status</th><th>Request</th><th>Progress</th><th>Created</th></tr>' +
-        sessions.map(s => '<tr><td><span class="status-dot status-' + s.status + '"></span>' + s.status + '</td>' +
-          '<td>' + escapeHtml((s.originalRequest || '').slice(0, 100)) + '</td>' +
-          '<td>' + s.iteration + '/' + s.maxIterations + '</td>' +
-          '<td>' + new Date(s.createdAt).toLocaleString() + '</td></tr>').join('') + '</table>';
-    }
-
-    // Approvals
-    async function loadApprovals() {
-      const res = await fetch('/api/approvals');
-      const approvals = await res.json();
-      const container = document.getElementById('approval-list');
-      if (approvals.length === 0) { container.innerHTML = '<div class="empty">No approvals</div>'; return; }
-      container.innerHTML = '<table><tr><th>Status</th><th>Tool</th><th>Reason</th><th>Created</th></tr>' +
-        approvals.map(a => {
-          const statusColor = a.status === 'approved' ? 'green' : a.status === 'rejected' ? 'red' : a.status === 'pending' ? 'yellow' : 'gray';
-          return '<tr><td><span class="tag tag-' + statusColor + '">' + a.status + '</span></td>' +
-            '<td>' + escapeHtml(a.toolName || a.tool_name || '') + '</td>' +
-            '<td>' + escapeHtml((a.reason || '').slice(0, 80)) + '</td>' +
-            '<td>' + new Date(a.createdAt || a.created_at || '').toLocaleString() + '</td></tr>';
-        }).join('') + '</table>';
-    }
-
-    // Config
-    async function loadConfig() {
-      const res = await fetch('/api/config');
-      const config = await res.json();
-      document.getElementById('config-content').textContent = JSON.stringify(config, null, 2);
-    }
-
-    function escapeHtml(str) {
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
-    // Init
-    document.getElementById('audit-date').value = new Date().toISOString().split('T')[0];
-    loadAudit();
-  </script>
-</body>
-</html>`;
 }

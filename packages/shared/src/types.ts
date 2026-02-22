@@ -6,7 +6,7 @@
 export interface Message {
   id: string;                           // UUID
   sourceId: string;                     // Original platform message ID
-  source: 'telegram';                   // Extensible later
+  source: 'telegram' | 'web';            // Bridge source
   userId: string;                       // Platform user ID (for allowlist checking)
   content: string;                      // Text content
   timestamp: Date;

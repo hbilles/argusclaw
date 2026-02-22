@@ -59,26 +59,7 @@ import { HeartbeatScheduler } from './scheduler.js';
 import { startDashboard, broadcastSSE } from './dashboard.js';
 // Phase 8: MCP server integration
 import { McpProxy, McpContainerManager, McpManager } from './mcp/index.js';
-
-// ---------------------------------------------------------------------------
-// Heuristic: Is a request "complex" enough for the Ralph Wiggum loop?
-// ---------------------------------------------------------------------------
-
-const COMPLEX_KEYWORDS = [
-  'set up', 'setup', 'create a project', 'scaffold', 'initialize',
-  'configure', 'build me', 'build a', 'set up a', 'install and configure',
-  'step by step', 'steps', 'multi-step', 'pipeline', 'workflow',
-  'deploy', 'migration', 'refactor', 'restructure', 'convert',
-];
-
-function isComplexRequest(content: string): boolean {
-  const lower = content.toLowerCase();
-  // Check for multiple action verbs or explicit complexity keywords
-  const matchCount = COMPLEX_KEYWORDS.filter((kw) => lower.includes(kw)).length;
-  // Also check for requests with many conjunctions (and, then, also, with)
-  const conjunctions = (lower.match(/\band\b|\bthen\b|\balso\b|\bwith\b/g) || []).length;
-  return matchCount >= 1 || conjunctions >= 3;
-}
+import { isComplexRequest } from './utils.js';
 
 function maskValue(value: string): string {
   if (value.length <= 8) return '••••';
@@ -129,11 +110,22 @@ async function main(): Promise<void> {
 
   // Initialize the HITL gate (approval system)
   // The sendToBridge callback broadcasts to all connected bridge clients
+  // AND to web dashboard SSE clients for approval/notification events
   const hitlGate = new HITLGate(
     approvalStore,
     auditLogger,
     config,
-    (message) => socketServer.broadcast(message),
+    (message) => {
+      socketServer.broadcast(message);
+      // Also broadcast to web dashboard SSE clients
+      if (message.type === 'approval-request') {
+        broadcastSSE('approval-request', message);
+      } else if (message.type === 'approval-expired') {
+        broadcastSSE('approval-expired', message);
+      } else if (message.type === 'notification') {
+        broadcastSSE('notification', message);
+      }
+    },
   );
 
   // Phase 5: Initialize OAuth store and external services
@@ -351,7 +343,16 @@ async function main(): Promise<void> {
   }
 
   // Phase 5: Start the web dashboard
-  const dashboardServer = startDashboard(auditLogger, memoryStore, approvalStore, config);
+  const dashboardServer = startDashboard({
+    auditLogger,
+    memoryStore,
+    approvalStore,
+    config,
+    orchestrator,
+    sessionManager,
+    hitlGate,
+    taskLoop,
+  });
 
   // Connect audit logger to dashboard SSE for live streaming
   auditLogger.setOnLog((entry) => broadcastSSE('audit', entry));

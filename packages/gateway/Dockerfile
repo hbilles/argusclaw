@@ -52,6 +52,9 @@ COPY packages/executor-web/package.json packages/executor-web/
 COPY --from=builder /app/packages/shared/dist/ packages/shared/dist/
 COPY --from=builder /app/packages/gateway/dist/ packages/gateway/dist/
 
+# Copy static frontend files (web dashboard)
+COPY --from=builder /app/packages/gateway/public/ packages/gateway/public/
+
 # Install production dependencies only (need build tools for better-sqlite3 native module)
 RUN apk add --no-cache --virtual .build-deps python3 make g++ && \
     npm ci --omit=dev --workspace=packages/shared --workspace=packages/gateway --include-workspace-root && \

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SecureClaw</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="/js/markdown.js"></script>
+  <script src="/js/app.js"></script>
+  <script defer src="/vendor/alpine.min.js"></script>
+</head>
+<body x-data="secureclaw" x-init="init()">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" :class="{ collapsed: !sidebarOpen }">
+    <div class="sidebar-header">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span class="brand-name" x-show="sidebarOpen">SecureClaw</span>
+      </div>
+      <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Collapse' : 'Expand'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <path x-show="sidebarOpen" d="M15 18l-6-6 6-6"/>
+          <path x-show="!sidebarOpen" d="M9 18l6-6-6-6"/>
+        </svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button @click="switchPanel('chat')" :class="{ active: activePanel === 'chat' }" :title="sidebarOpen ? '' : 'Chat'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+        </svg>
+        <span x-show="sidebarOpen">Chat</span>
+      </button>
+      <button @click="switchPanel('audit')" :class="{ active: activePanel === 'audit' }" :title="sidebarOpen ? '' : 'Audit Log'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <span x-show="sidebarOpen">Audit Log</span>
+      </button>
+      <button @click="switchPanel('memories')" :class="{ active: activePanel === 'memories' }" :title="sidebarOpen ? '' : 'Memories'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+        </svg>
+        <span x-show="sidebarOpen">Memories</span>
+      </button>
+      <button @click="switchPanel('sessions')" :class="{ active: activePanel === 'sessions' }" :title="sidebarOpen ? '' : 'Sessions'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        <span x-show="sidebarOpen">Sessions</span>
+      </button>
+      <button @click="switchPanel('approvals')" :class="{ active: activePanel === 'approvals' }" :title="sidebarOpen ? '' : 'Approvals'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+        </svg>
+        <span x-show="sidebarOpen">Approvals</span>
+        <span class="nav-badge" x-show="pendingApprovals.length > 0" x-text="pendingApprovals.length"></span>
+      </button>
+      <button @click="switchPanel('config')" :class="{ active: activePanel === 'config' }" :title="sidebarOpen ? '' : 'Config'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+        <span x-show="sidebarOpen">Config</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer" x-show="sidebarOpen">
+      <button class="new-chat-btn" @click="resetChat()" title="New conversation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New Chat
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+
+    <!-- Chat Panel -->
+    <div x-show="activePanel === 'chat'" class="chat-panel" x-cloak>
+      <div class="chat-messages" x-ref="chatMessages">
+        <!-- Empty state -->
+        <div class="empty-state" x-show="messages.length === 0 && !isThinking">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <h2>SecureClaw Agent</h2>
+          <p>Send a message to start a conversation with your AI agent.</p>
+        </div>
+
+        <!-- Messages -->
+        <template x-for="msg in messages" :key="msg.id">
+          <div class="chat-msg-row" :class="msg.role">
+
+            <!-- User message -->
+            <template x-if="msg.role === 'user' && msg.type === 'text'">
+              <div class="msg-bubble user-bubble">
+                <div class="msg-text" x-text="msg.content"></div>
+              </div>
+            </template>
+
+            <!-- Assistant message -->
+            <template x-if="msg.role === 'assistant' && msg.type === 'text'">
+              <div class="msg-bubble assistant-bubble">
+                <div class="msg-text" x-html="renderMarkdown(msg.content)"></div>
+              </div>
+            </template>
+
+            <!-- Tool call -->
+            <template x-if="msg.type === 'tool_call'">
+              <div class="tool-card" @click="msg.expanded = !msg.expanded">
+                <div class="tool-header">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                  </svg>
+                  <span class="tool-name" x-text="msg.toolName"></span>
+                  <svg class="chevron" :class="{ rotated: msg.expanded }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </div>
+                <div class="tool-body" x-show="msg.expanded" x-cloak>
+                  <pre x-text="typeof msg.toolInput === 'string' ? msg.toolInput : JSON.stringify(msg.toolInput, null, 2)"></pre>
+                </div>
+              </div>
+            </template>
+
+            <!-- Tool result -->
+            <template x-if="msg.type === 'tool_result'">
+              <div class="tool-result-card" :class="msg.success ? 'success' : 'error'">
+                <svg x-show="msg.success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <svg x-show="!msg.success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <span class="tool-result-name" x-text="msg.toolName || 'Tool'"></span>
+                <span class="tool-result-status" x-text="msg.success ? 'completed' : (msg.content || 'failed')"></span>
+              </div>
+            </template>
+
+            <!-- Approval request -->
+            <template x-if="msg.type === 'approval'">
+              <div class="approval-card" :class="msg.status">
+                <div class="approval-header">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                  Approval Required
+                </div>
+                <div class="approval-body">
+                  <div class="approval-tool" x-text="msg.toolName"></div>
+                  <div class="approval-reason" x-text="msg.reason"></div>
+                  <div class="approval-input" x-show="msg.toolInput" @click="msg.inputExpanded = !msg.inputExpanded">
+                    <span class="approval-input-label">Parameters</span>
+                    <svg class="chevron" :class="{ rotated: msg.inputExpanded }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </div>
+                  <pre x-show="msg.inputExpanded" x-text="JSON.stringify(msg.toolInput, null, 2)" class="approval-params"></pre>
+                </div>
+                <div class="approval-actions" x-show="msg.status === 'pending'">
+                  <button class="btn btn-approve" @click.stop="decide(msg.approvalId, 'approved')">Approve</button>
+                  <button class="btn btn-session" @click.stop="decide(msg.approvalId, 'session-approved')">Allow for Session</button>
+                  <button class="btn btn-reject" @click.stop="decide(msg.approvalId, 'rejected')">Reject</button>
+                </div>
+                <div class="approval-resolved" x-show="msg.status !== 'pending'">
+                  <span class="approval-status-badge" :class="msg.status" x-text="msg.status"></span>
+                </div>
+              </div>
+            </template>
+
+            <!-- Error -->
+            <template x-if="msg.type === 'error'">
+              <div class="error-card">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <span x-text="msg.content"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Thinking indicator -->
+        <div class="thinking" x-show="isThinking" x-cloak>
+          <div class="thinking-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span class="thinking-text">Thinking...</span>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div class="chat-input-area">
+        <div class="input-container">
+          <textarea
+            x-ref="chatInput"
+            x-model="inputText"
+            @keydown.enter.prevent="if (!$event.shiftKey) sendMessage()"
+            placeholder="Message SecureClaw..."
+            :disabled="isThinking"
+            rows="1"
+            x-effect="autoResize($refs.chatInput)"
+          ></textarea>
+          <button class="send-btn" @click="sendMessage()" :disabled="isThinking || !inputText.trim()" title="Send message">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Panel -->
+    <div x-show="activePanel === 'audit'" class="admin-panel" x-cloak>
+      <div class="admin-header">
+        <h2>Audit Log</h2>
+        <span class="live-dot"></span>
+        <span class="live-label">Live</span>
+      </div>
+      <div class="filters">
+        <input type="date" x-model="auditDate" @change="loadAudit()">
+        <select x-model="auditType" @change="loadAudit()">
+          <option value="">All Types</option>
+          <option value="message_received">Message Received</option>
+          <option value="llm_request">LLM Request</option>
+          <option value="llm_response">LLM Response</option>
+          <option value="tool_call">Tool Call</option>
+          <option value="tool_result">Tool Result</option>
+          <option value="action_classified">Action Classified</option>
+          <option value="approval_requested">Approval Requested</option>
+          <option value="approval_resolved">Approval Resolved</option>
+          <option value="message_sent">Message Sent</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+      <div class="admin-body">
+        <div class="empty-admin" x-show="auditEntries.length === 0">No audit entries found</div>
+        <template x-for="(entry, i) in auditEntries" :key="i">
+          <div class="card">
+            <div class="card-header" @click="entry._expanded = !entry._expanded">
+              <span>
+                <span class="tag" :class="'tag-' + getTypeColor(entry.type)" x-text="entry.type"></span>
+                <span class="card-time" x-text="new Date(entry.timestamp).toLocaleTimeString()"></span>
+              </span>
+              <span class="card-session" x-text="(entry.sessionId || '').slice(0, 8)"></span>
+            </div>
+            <div class="card-body" x-show="entry._expanded" x-cloak>
+              <pre x-text="JSON.stringify(entry.data, null, 2)"></pre>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Memories Panel -->
+    <div x-show="activePanel === 'memories'" class="admin-panel" x-cloak>
+      <div class="admin-header"><h2>Memories</h2></div>
+      <div class="admin-body">
+        <div class="empty-admin" x-show="Object.keys(memoriesGrouped).length === 0">No memories stored</div>
+        <template x-for="[category, items] in Object.entries(memoriesGrouped)" :key="category">
+          <div class="memory-group">
+            <h3 class="memory-category" x-text="category"></h3>
+            <template x-for="mem in items" :key="mem.id">
+              <div class="card">
+                <div class="card-header">
+                  <span x-text="mem.topic"></span>
+                  <span class="card-time" x-text="new Date(mem.updatedAt).toLocaleDateString()"></span>
+                </div>
+                <div class="card-body open">
+                  <pre x-text="mem.content"></pre>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Sessions Panel -->
+    <div x-show="activePanel === 'sessions'" class="admin-panel" x-cloak>
+      <div class="admin-header"><h2>Sessions</h2></div>
+      <div class="admin-body">
+        <div class="empty-admin" x-show="sessionsList.length === 0">No sessions</div>
+        <table x-show="sessionsList.length > 0" class="admin-table">
+          <thead>
+            <tr><th>Status</th><th>Request</th><th>Progress</th><th>Created</th></tr>
+          </thead>
+          <tbody>
+            <template x-for="s in sessionsList" :key="s.id">
+              <tr>
+                <td><span class="status-dot" :class="'status-' + s.status"></span><span x-text="s.status"></span></td>
+                <td x-text="(s.originalRequest || '').slice(0, 100)"></td>
+                <td x-text="s.iteration + '/' + s.maxIterations"></td>
+                <td x-text="new Date(s.createdAt).toLocaleString()"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Approvals Panel -->
+    <div x-show="activePanel === 'approvals'" class="admin-panel" x-cloak>
+      <div class="admin-header"><h2>Approvals</h2></div>
+      <div class="admin-body">
+        <div class="empty-admin" x-show="approvalsList.length === 0">No approvals</div>
+        <table x-show="approvalsList.length > 0" class="admin-table">
+          <thead>
+            <tr><th>Status</th><th>Tool</th><th>Reason</th><th>Created</th></tr>
+          </thead>
+          <tbody>
+            <template x-for="a in approvalsList" :key="a.id || a.approvalId">
+              <tr>
+                <td><span class="tag" :class="'tag-' + getApprovalColor(a.status)" x-text="a.status"></span></td>
+                <td x-text="a.toolName || a.tool_name || ''"></td>
+                <td x-text="(a.reason || '').slice(0, 80)"></td>
+                <td x-text="new Date(a.createdAt || a.created_at || '').toLocaleString()"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Config Panel -->
+    <div x-show="activePanel === 'config'" class="admin-panel" x-cloak>
+      <div class="admin-header"><h2>Configuration</h2></div>
+      <div class="admin-body">
+        <div class="card">
+          <div class="card-header">Current Configuration (read-only)</div>
+          <div class="card-body open">
+            <pre x-text="configText"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+</body>
+</html>

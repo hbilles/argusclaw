@@ -20,6 +20,7 @@ export class AuditLogger {
   private currentDate: string = '';
   private stream: fs.WriteStream | null = null;
   private onLog: ((entry: Record<string, unknown>) => void) | null = null;
+  private hooks: Array<(entry: Record<string, unknown>) => void> = [];
 
   constructor(auditDir?: string) {
     this.auditDir = auditDir ?? process.env['AUDIT_DIR'] ?? DEFAULT_AUDIT_DIR;
@@ -28,6 +29,14 @@ export class AuditLogger {
   /** Register a callback for new log entries (used by dashboard SSE). */
   setOnLog(callback: (entry: Record<string, unknown>) => void): void {
     this.onLog = callback;
+  }
+
+  /** Register a hook for log entries. Returns an unhook function. */
+  addHook(fn: (entry: Record<string, unknown>) => void): () => void {
+    this.hooks.push(fn);
+    return () => {
+      this.hooks = this.hooks.filter((h) => h !== fn);
+    };
   }
 
   /** Ensure the audit directory exists and open the initial stream. */
@@ -53,6 +62,15 @@ export class AuditLogger {
         this.onLog(serialized);
       } catch {
         // Dashboard error — ignore
+      }
+    }
+
+    // Notify registered hooks (used by web chat SSE)
+    for (const hook of this.hooks) {
+      try {
+        hook(serialized);
+      } catch {
+        // Hook error — ignore
       }
     }
   }
