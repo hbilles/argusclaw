@@ -74,6 +74,7 @@ secure-claw/
 │   │       ├── prompt-builder.ts    # Context-aware system prompt assembly
 │   │       ├── scheduler.ts         # Cron-based heartbeat triggers
 │   │       ├── dashboard.ts         # Web dashboard server (chat API + admin REST + SSE)
+│   │       ├── soul.ts               # Soul identity manager (SHA-256 verified, SQLite versioned)
 │   │       ├── audit.ts             # Append-only JSONL audit logger
 │   │       ├── config.ts            # YAML config loader + validation
 │   │       ├── utils.ts             # Shared utilities (complexity detection, HTTP helpers)
@@ -130,7 +131,9 @@ secure-claw/
 │       └── src/                     # SDK upgraded to 1.x, defensive JMAP response parsing
 ├── config/
 │   ├── secureclaw.example.yaml  # Committed template config
-│   └── secureclaw.yaml          # Local runtime config (gitignored)
+│   ├── secureclaw.yaml          # Local runtime config (gitignored)
+│   ├── soul.example.md          # Committed soul identity template
+│   └── soul.md                  # Local soul identity file (gitignored)
 ├── docker-compose.yml        # Gateway + Bridge as services; executors built but not run
 ├── .env.example              # Required environment variables
 └── package.json              # npm workspaces monorepo root
@@ -211,6 +214,7 @@ The LLM has access to these tools, each routed through the HITL gate:
 | `read_file_github` | In-process | Read a file from a GitHub repo |
 | `create_issue` | In-process | Create GitHub issue (requires approval) |
 | `create_pr` | In-process | Create GitHub PR (requires approval) |
+| `propose_soul_update` | In-process | Propose changes to the agent's identity file (always requires approval) |
 
 ### MCP Ecosystem Tools
 
@@ -302,6 +306,16 @@ Web content trust boundary:
 
 Every event is logged to an append-only JSONL audit log: messages received, LLM requests/responses, tool calls, tool results, action classifications, approval decisions, and errors. The web dashboard provides live SSE streaming and paginated querying of the log.
 
+### L6 — Soul Identity Protection
+
+The agent's personality and behavioral guidelines live in `config/soul.md`, a markdown file injected as the first section of every system prompt. The SoulManager enforces integrity through three mechanisms:
+
+- **SHA-256 hash verification** — A blessed hash is computed on startup. Every read verifies the file hasn't been modified outside the sanctioned update path. Tampering triggers an audit event and falls back to a minimal safe identity.
+- **File isolation** — `config/soul.md` lives outside all executor mount points (`/workspace`, `/documents`, `/sandbox`). No executor container can read or write it.
+- **Mandatory HITL approval** — The `propose_soul_update` tool is hardcoded to `require-approval` and explicitly excluded from session-grant bypass. The agent can propose changes to its own identity, but a human must approve every one.
+
+All soul events (load, tamper detection, update proposals, approvals, rejections) are written to the audit log. Version history is stored in SQLite with full content, rationale, and attribution for each change.
+
 ## Configuration
 
 ### Environment Variables (`.env`)
@@ -327,6 +341,7 @@ Controls the entire system:
 - **`mounts`** — Host directory → container path mappings with read/write permissions. These define what the file and shell executors can see.
 - **`actionTiers`** — HITL classification rules. Ordered lists of tool + condition patterns for `autoApprove`, `notify`, and `requireApproval`.
 - **`trustedDomains`** — Base domains that downgrade `browse_web` from require-approval to notify tier. Additional domains can be approved dynamically at runtime — when the agent visits an unlisted domain, the user is prompted to allow it for the session.
+- **`soulFile`** — Path to the agent's identity file (default: `./soul.md`, relative to config directory). Start from `config/soul.example.md`.
 - **`heartbeats`** — Cron schedules for proactive agent triggers with prompt templates.
 - **`oauth`** — Google, GitHub, and Codex OAuth client credentials for service integrations.
 - **`mcpServers`** — MCP server definitions. Each entry specifies a Docker image, command, optional allowed domains (for network access through the proxy), environment variables (`"from_env"` resolves from host env), mounts, resource limits, a `defaultTier` for HITL classification, and tool filters (`includeTools`, `excludeTools`, `maxTools`). Vendored servers (like Fastmail) use `command: node` with an absolute path to the pre-built dist (e.g., `args: ["/opt/fastmail-mcp/dist/index.js"]`), while community packages can still use `command: npx`.
@@ -347,8 +362,10 @@ git clone <repo-url> && cd secure-claw
 npm install
 cp .env.example .env
 cp config/secureclaw.example.yaml config/secureclaw.yaml
+cp config/soul.example.md config/soul.md
 # Edit .env with your tokens and secrets
 # Edit config/secureclaw.yaml to configure mounts and HITL rules
+# Edit config/soul.md to customize the agent's personality and identity
 ```
 
 ### Running with Docker (recommended)
@@ -384,6 +401,7 @@ Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only
 - **Memories** — Browse stored memories grouped by category
 - **Sessions** — View active and recent task sessions
 - **Approvals** — Approval request history with status
+- **Soul** — View the agent's current identity (SOUL.md) with rendered markdown and version history
 - **Config** — Current configuration viewer (read-only, secrets redacted)
 
 ### Telegram Commands
