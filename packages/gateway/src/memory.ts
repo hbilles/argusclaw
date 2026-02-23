@@ -1,5 +1,5 @@
 /**
- * Memory Store — SQLite-backed persistent memory for SecureClaw.
+ * Memory Store — SQLite-backed persistent memory for ArgusClaw.
  *
  * Two memory types:
  * 1. Long-term memories (facts, preferences, project context)

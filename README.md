@@ -1,7 +1,7 @@
-# SecureClaw
+# ArgusClaw
 
 <p>
-  <img src="docs/images/secure-claw.jpg" width="512" alt="SecureClaw" />
+  <img src="docs/images/4e39e39d-ef33-480f-9138-809b0541a6f1.jpg" width="512" alt="ArgusClaw" />
 </p>
 
 A security-first personal AI agent framework in TypeScript. Security boundaries are enforced by the runtime — Docker containers, filesystem mounts, network policies — not by prompt instructions. A compromised LLM cannot escape its sandbox.
@@ -53,7 +53,7 @@ The Gateway is the only process with LLM API keys, the Docker socket, and outbou
 ## Project Structure
 
 ```
-secure-claw/
+argusclaw/
 ├── packages/
 │   ├── gateway/             # Central orchestrator (the only process with API keys)
 │   │   ├── public/                  # Static frontend files (served by dashboard)
@@ -130,8 +130,8 @@ secure-claw/
 │   └── fastmail-mcp/         # Forked MCP server (pre-built into executor-mcp image)
 │       └── src/                     # SDK upgraded to 1.x, defensive JMAP response parsing
 ├── config/
-│   ├── secureclaw.example.yaml  # Committed template config
-│   ├── secureclaw.yaml          # Local runtime config (gitignored)
+│   ├── argusclaw.example.yaml  # Committed template config
+│   ├── argusclaw.yaml          # Local runtime config (gitignored)
 │   ├── soul.example.md          # Committed soul identity template
 │   └── soul.md                  # Local soul identity file (gitignored)
 ├── docker-compose.yml        # Gateway + Bridge as services; executors built but not run
@@ -218,7 +218,7 @@ The LLM has access to these tools, each routed through the HITL gate:
 
 ### MCP Ecosystem Tools
 
-In addition to the built-in tools above, SecureClaw can dynamically discover tools from MCP (Model Context Protocol) servers configured in `secureclaw.yaml`. Each MCP server's tools are prefixed with `mcp_{serverName}__` to avoid collisions (e.g., `mcp_github__list_issues`, `mcp_slack__post_message`). MCP tools go through the same HITL gate as all other tools — each server has a configurable `defaultTier` that applies when no explicit YAML rule matches.
+In addition to the built-in tools above, ArgusClaw can dynamically discover tools from MCP (Model Context Protocol) servers configured in `argusclaw.yaml`. Each MCP server's tools are prefixed with `mcp_{serverName}__` to avoid collisions (e.g., `mcp_github__list_issues`, `mcp_slack__post_message`). MCP tools go through the same HITL gate as all other tools — each server has a configurable `defaultTier` that applies when no explicit YAML rule matches.
 
 MCP servers can be sourced from community packages or vendored locally in `vendor/`. Vendored servers are pre-built into the `executor-mcp` Docker image at build time, eliminating runtime `npx` downloads and reducing the outbound domain allowlist for the container. The Fastmail MCP server (`vendor/fastmail-mcp/`) is a fork of `github:MadLlama25/fastmail-mcp` with the MCP SDK upgraded to 1.x and defensive JMAP response parsing.
 
@@ -296,7 +296,7 @@ The executor runtime validates the token before executing anything.
 
 ### L4 — Human-in-the-Loop Gate
 
-Actions are classified by the Gateway in code, not by the LLM. The classification rules in `secureclaw.yaml` match on tool name and input field patterns (e.g., path glob, working directory). If no rule matches, the default is **require-approval** (fail-safe). For MCP tools, the priority chain is: explicit YAML rule > server's `defaultTier` config > fail-safe `require-approval`. Approval requests are sent to both Telegram (inline keyboard) and the web dashboard (inline buttons) simultaneously, with three options: **Approve** (one-time), **Allow for Session** (auto-approve matching actions for the remainder of the session), or **Reject**. The first response from either channel resolves the request. Session grants expire when the user's session ends.
+Actions are classified by the Gateway in code, not by the LLM. The classification rules in `argusclaw.yaml` match on tool name and input field patterns (e.g., path glob, working directory). If no rule matches, the default is **require-approval** (fail-safe). For MCP tools, the priority chain is: explicit YAML rule > server's `defaultTier` config > fail-safe `require-approval`. Approval requests are sent to both Telegram (inline keyboard) and the web dashboard (inline buttons) simultaneously, with three options: **Approve** (one-time), **Allow for Session** (auto-approve matching actions for the remainder of the session), or **Reject**. The first response from either channel resolves the request. Session grants expire when the user's session ends.
 
 Web content trust boundary:
 - Structured `browse_web` payloads include explicit untrusted-content markers in the `security` field.
@@ -330,11 +330,11 @@ OAUTH_KEY=encryption-passphrase   # Optional — encrypts OAuth tokens at rest
 MCP_PROXY_PORT=0                  # Optional — MCP proxy listen port (0 = OS-assigned)
 ```
 
-### `config/secureclaw.yaml`
+### `config/argusclaw.yaml`
 
 Controls the entire system:
 
-`config/secureclaw.yaml` is local runtime config (gitignored). Start from `config/secureclaw.example.yaml`.
+`config/argusclaw.yaml` is local runtime config (gitignored). Start from `config/argusclaw.example.yaml`.
 
 - **`llm`** — Provider, model, and token limits. Supported providers: `anthropic` (default), `openai`, `lmstudio`, `codex`. The Codex provider uses OpenAI's Responses API and supports optional `reasoningEffort` and `codexAuthMode` (`api-key` or `oauth`). In `oauth` mode, use a Codex model ID (for example `gpt-5-codex`, `gpt-5.1-codex`, `gpt-5.2-codex`, or `gpt-5.3-codex`).
 - **`executors`** — Per-executor image, memory/CPU limits, timeouts, output caps. The web executor also specifies its domain allowlist and `resultFormat` (`structured` or `legacy`) here.
@@ -358,13 +358,13 @@ Controls the entire system:
 ### Setup
 
 ```sh
-git clone <repo-url> && cd secure-claw
+git clone <repo-url> && cd argusclaw
 npm install
 cp .env.example .env
-cp config/secureclaw.example.yaml config/secureclaw.yaml
+cp config/argusclaw.example.yaml config/argusclaw.yaml
 cp config/soul.example.md config/soul.md
 # Edit .env with your tokens and secrets
-# Edit config/secureclaw.yaml to configure mounts and HITL rules
+# Edit config/argusclaw.yaml to configure mounts and HITL rules
 # Edit config/soul.md to customize the agent's personality and identity
 ```
 
@@ -387,7 +387,7 @@ Runs the gateway and bridge-telegram concurrently with watch mode via `concurren
 
 ### Web Dashboard
 
-Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only, no authentication). The dashboard provides a full chat interface for interacting with the SecureClaw agent, plus admin panels accessible from the sidebar.
+Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only, no authentication). The dashboard provides a full chat interface for interacting with the ArgusClaw agent, plus admin panels accessible from the sidebar.
 
 **Chat Interface** (primary view):
 - Send messages and receive streamed responses with real-time tool activity
@@ -422,13 +422,13 @@ Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only
 
 To enable service integrations and Codex OAuth:
 
-1. Configure the relevant credentials in `config/secureclaw.yaml` under `oauth`:
+1. Configure the relevant credentials in `config/argusclaw.yaml` under `oauth`:
    - `oauth.google` / `oauth.github` for service tools
    - `oauth.openaiCodex.clientId` for Codex OAuth mode
 2. Set a strong `OAUTH_KEY` (or macOS Keychain entry) for token encryption-at-rest.
 3. If using Codex OAuth, set `llm.codexAuthMode: oauth` and `llm.model` to a Codex model ID (for example `gpt-5-codex` or `gpt-5.3-codex`).
    - ChatGPT OAuth mode accepts Codex-family model IDs only; non-Codex IDs (and sometimes `codex-mini-latest`) are rejected.
-4. Start SecureClaw, then run `/connect codex` in Telegram and open the returned URL.
+4. Start ArgusClaw, then run `/connect codex` in Telegram and open the returned URL.
 5. If callback routing is blocked (e.g., VPS/remote browser), copy the final redirected URL and run:
    - `/connect codex callback <url-or-code>`
 

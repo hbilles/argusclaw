@@ -3,7 +3,7 @@
  *
  * IMPORTANT: This module requires access to the Docker socket
  * (/var/run/docker.sock). This is the ONE privileged operation in the
- * entire SecureClaw system. The Gateway needs Docker socket access to
+ * entire ArgusClaw system. The Gateway needs Docker socket access to
  * create, start, monitor, and remove executor containers.
  * No other component touches Docker directly.
  *
@@ -22,9 +22,9 @@
  */
 
 import Docker from 'dockerode';
-import { mintCapabilityToken } from '@secureclaw/shared';
-import type { Capability, Mount, ExecutorResult } from '@secureclaw/shared';
-import type { SecureClawConfig, MountConfig, WebExecutorConfig } from './config.js';
+import { mintCapabilityToken } from '@argusclaw/shared';
+import type { Capability, Mount, ExecutorResult } from '@argusclaw/shared';
+import type { ArgusClawConfig, MountConfig, WebExecutorConfig } from './config.js';
 
 export type { ExecutorResult };
 
@@ -34,10 +34,10 @@ export interface TaskPayload {
 
 export class Dispatcher {
   private docker: Docker;
-  private config: SecureClawConfig;
+  private config: ArgusClawConfig;
   private capabilitySecret: string;
 
-  constructor(config: SecureClawConfig) {
+  constructor(config: ArgusClawConfig) {
     // Connect to the Docker daemon via the Unix socket.
     // ⚠️  This is the single point of privilege in the system.
     // The gateway must have /var/run/docker.sock mounted to function.

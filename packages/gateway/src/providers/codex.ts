@@ -37,7 +37,7 @@ import type {
 } from '../llm-provider.js';
 
 const DEFAULT_OAUTH_MODEL = 'gpt-5-codex';
-const DEFAULT_OAUTH_INSTRUCTIONS = 'You are SecureClaw. Follow system and user instructions exactly.';
+const DEFAULT_OAUTH_INSTRUCTIONS = 'You are ArgusClaw. Follow system and user instructions exactly.';
 const CHATGPT_OAUTH_UNSUPPORTED_MODELS = new Set(['codex-mini-latest']);
 
 // ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ function toCodexTool(tool: ToolDefinition): FunctionTool {
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
-    strict: false, // SecureClaw schemas lack additionalProperties: false
+    strict: false, // ArgusClaw schemas lack additionalProperties: false
   };
 }
 
@@ -279,7 +279,7 @@ export class CodexProvider implements LLMProvider {
       instructions: params.system,
       input,
       max_output_tokens: params.maxTokens,
-      store: false, // SecureClaw manages its own conversation state
+      store: false, // ArgusClaw manages its own conversation state
     };
 
     // Only include tools if there are any

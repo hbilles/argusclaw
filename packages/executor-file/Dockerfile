@@ -1,4 +1,4 @@
-# SecureClaw File Executor
+# ArgusClaw File Executor
 #
 # Provides a JSON API for file operations (list, read, write, search, stat).
 # Created dynamically by the Gateway's Dispatcher — NOT a long-running service.

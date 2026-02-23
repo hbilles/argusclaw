@@ -1,5 +1,5 @@
 /**
- * SecureClaw Telegram Bridge
+ * ArgusClaw Telegram Bridge
  *
  * Connects to Telegram via grammY (long polling) and forwards
  * allowed messages to the Gateway over a Unix domain socket.
@@ -21,7 +21,7 @@
 
 import { Bot, InlineKeyboard } from 'grammy';
 import { randomUUID } from 'node:crypto';
-import { SocketClient } from '@secureclaw/shared';
+import { SocketClient } from '@argusclaw/shared';
 import type {
   Message,
   SocketRequest,
@@ -50,7 +50,7 @@ import type {
   AuthStatusRequest,
   AuthDisconnectRequest,
   AuthResponse,
-} from '@secureclaw/shared';
+} from '@argusclaw/shared';
 
 // ---------------------------------------------------------------------------
 // Environment validation

@@ -1,5 +1,5 @@
 /**
- * SecureClaw Gateway — central orchestrator.
+ * ArgusClaw Gateway — central orchestrator.
  *
  * Listens on a Unix domain socket for messages from bridges,
  * manages sessions, routes tool calls through sandboxed containers,
@@ -11,7 +11,7 @@
  *          heartbeat scheduler, web dashboard.
  */
 
-import { SocketServer } from '@secureclaw/shared';
+import { SocketServer } from '@argusclaw/shared';
 import { createLLMProvider } from './providers/factory.js';
 import type { ChatMessage } from './llm-provider.js';
 import type {
@@ -37,7 +37,7 @@ import type {
   AuthStatusRequest,
   AuthDisconnectRequest,
   AuthResponse,
-} from '@secureclaw/shared';
+} from '@argusclaw/shared';
 import { SessionManager } from './session.js';
 import { AuditLogger } from './audit.js';
 import { loadConfig } from './config.js';
@@ -72,7 +72,7 @@ function maskValue(value: string): string {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  console.log('[gateway] Starting SecureClaw Gateway...');
+  console.log('[gateway] Starting ArgusClaw Gateway...');
 
   // Load configuration
   const config = loadConfig();
@@ -504,7 +504,7 @@ async function main(): Promise<void> {
           action: 'connect',
           success: false,
           message:
-            'Codex OAuth is not configured. Add oauth.openaiCodex.clientId to config/secureclaw.yaml and restart.',
+            'Codex OAuth is not configured. Add oauth.openaiCodex.clientId to config/argusclaw.yaml and restart.',
         });
         return;
       }

@@ -1,7 +1,7 @@
 /**
  * MCP Client — wrapper around the official @modelcontextprotocol/sdk Client.
  *
- * Provides a simplified interface for SecureClaw's use case:
+ * Provides a simplified interface for ArgusClaw's use case:
  * - Connects to MCP servers via Docker attach stdin/stdout streams
  * - Discovers tools via tools/list
  * - Calls tools with per-call timeouts
@@ -147,7 +147,7 @@ export class McpClient {
   constructor(stdin: Writable, stdout: Readable) {
     this.transport = new StreamTransport(stdin, stdout);
     this.client = new Client(
-      { name: 'secureclaw-gateway', version: '1.0.0' },
+      { name: 'argusclaw-gateway', version: '1.0.0' },
       { capabilities: {} },
     );
   }

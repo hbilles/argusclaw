@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureClaw MCP Executor Entrypoint
+# ArgusClaw MCP Executor Entrypoint
 #
 # For containers with network access (HTTPS_PROXY is set):
 # 1. Parse the proxy address to get the Gateway proxy host:port

@@ -1,5 +1,5 @@
 /**
- * SecureClaw File Executor
+ * ArgusClaw File Executor
  *
  * Provides a JSON API for file operations, scoped to declared mounts.
  *
@@ -20,8 +20,8 @@
  * - No network access
  */
 
-import { verifyCapabilityToken } from '@secureclaw/shared';
-import type { Capability, Mount } from '@secureclaw/shared';
+import { verifyCapabilityToken } from '@argusclaw/shared';
+import type { Capability, Mount } from '@argusclaw/shared';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execSync } from 'node:child_process';

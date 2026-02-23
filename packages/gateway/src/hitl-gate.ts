@@ -16,9 +16,9 @@ import { randomUUID } from 'node:crypto';
 import { classifyAction } from './classifier.js';
 import type { ApprovalStore } from './approval-store.js';
 import type { AuditLogger } from './audit.js';
-import type { SecureClawConfig } from './config.js';
+import type { ArgusClawConfig } from './config.js';
 import type { DomainManager } from './domain-manager.js';
-import type { ActionTier, ApprovalRequest, BridgeNotification, ApprovalExpired } from '@secureclaw/shared';
+import type { ActionTier, ApprovalRequest, BridgeNotification, ApprovalExpired } from '@argusclaw/shared';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,7 +84,7 @@ const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 export class HITLGate {
   private approvalStore: ApprovalStore;
   private auditLogger: AuditLogger;
-  private config: SecureClawConfig;
+  private config: ArgusClawConfig;
   private sendToBridge: SendToBridgeFn;
 
   /** Map of approval ID → pending promise resolver + timeout */
@@ -99,7 +99,7 @@ export class HITLGate {
   constructor(
     approvalStore: ApprovalStore,
     auditLogger: AuditLogger,
-    config: SecureClawConfig,
+    config: ArgusClawConfig,
     sendToBridge: SendToBridgeFn,
   ) {
     this.approvalStore = approvalStore;

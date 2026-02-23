@@ -9,7 +9,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import { EventEmitter } from 'node:events';
 
-const DEFAULT_SOCKET_PATH = '/tmp/secureclaw.sock';
+const DEFAULT_SOCKET_PATH = '/tmp/argusclaw.sock';
 
 // ---------------------------------------------------------------------------
 // Line-based JSON parser for a socket stream

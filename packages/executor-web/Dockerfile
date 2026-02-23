@@ -1,4 +1,4 @@
-# SecureClaw Web Executor
+# ArgusClaw Web Executor
 #
 # Headless Chromium browser in a sandboxed container with strict network controls.
 # Uses the official Playwright image for reliable Chromium support.

@@ -14,13 +14,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { classifyAction, matchesPattern } from '../src/classifier.js';
-import type { SecureClawConfig } from '../src/config.js';
+import type { ArgusClawConfig } from '../src/config.js';
 
 // ---------------------------------------------------------------------------
-// Test config matching secureclaw.yaml
+// Test config matching argusclaw.yaml
 // ---------------------------------------------------------------------------
 
-const testConfig: SecureClawConfig = {
+const testConfig: ArgusClawConfig = {
   llm: { provider: 'anthropic', model: 'claude-sonnet-4-20250514', maxTokens: 4096 },
   executors: {
     shell: { image: 'test-shell', memoryLimit: '512m', cpuLimit: 1, defaultTimeout: 60, defaultMaxOutput: 1048576 },
@@ -282,7 +282,7 @@ describe('matchesPattern', () => {
 
 describe('classifyAction with edge-case configs', () => {
   it('should default to require-approval when all tier arrays are empty', () => {
-    const emptyConfig: SecureClawConfig = {
+    const emptyConfig: ArgusClawConfig = {
       ...testConfig,
       actionTiers: {
         autoApprove: [],
@@ -296,7 +296,7 @@ describe('classifyAction with edge-case configs', () => {
   });
 
   it('should handle rules with multiple conditions (all must match)', () => {
-    const multiCondConfig: SecureClawConfig = {
+    const multiCondConfig: ArgusClawConfig = {
       ...testConfig,
       actionTiers: {
         autoApprove: [

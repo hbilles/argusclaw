@@ -1,4 +1,4 @@
-# SecureClaw Shell Executor
+# ArgusClaw Shell Executor
 #
 # Runs shell commands in a sandboxed environment.
 # Created dynamically by the Gateway's Dispatcher — NOT a long-running service.

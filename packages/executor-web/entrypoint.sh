@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureClaw Web Executor Entrypoint
+# ArgusClaw Web Executor Entrypoint
 #
 # Security setup:
 # 1. Set iptables rules (requires NET_ADMIN capability, temporarily)

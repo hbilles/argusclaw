@@ -53,7 +53,7 @@ export class PromptBuilder {
     // Base identity (from soul file or fallback)
     sections.push(
       this.soulManager?.getContentSafe() ??
-      'You are a personal AI assistant called SecureClaw. You are helpful, concise, and direct. ' +
+      'You are a personal AI assistant called ArgusClaw. You are helpful, concise, and direct. ' +
       'You communicate via Telegram.',
     );
 
@@ -200,7 +200,7 @@ export class PromptBuilder {
     // Base identity (from soul file or fallback)
     sections.push(
       this.soulManager?.getContentSafe() ??
-      'You are a personal AI assistant called SecureClaw. You are helpful, concise, and direct. ' +
+      'You are a personal AI assistant called ArgusClaw. You are helpful, concise, and direct. ' +
       'You communicate via Telegram.',
     );
 

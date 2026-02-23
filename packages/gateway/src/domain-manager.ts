@@ -13,7 +13,7 @@
  * Session-approved domains become both allowed AND trusted.
  */
 
-import type { SecureClawConfig } from './config.js';
+import type { ArgusClawConfig } from './config.js';
 
 export class DomainManager {
   /** Base allowed domains from config (immutable at runtime) */
@@ -23,7 +23,7 @@ export class DomainManager {
   /** Runtime per-user session domains (both allowed and trusted) */
   private sessionDomains: Map<string, Set<string>> = new Map();
 
-  constructor(config: SecureClawConfig) {
+  constructor(config: ArgusClawConfig) {
     const webConfig = config.executors.web;
     this.baseAllowedDomains = new Set(
       (webConfig?.allowedDomains ?? []).map((d) => d.toLowerCase()),

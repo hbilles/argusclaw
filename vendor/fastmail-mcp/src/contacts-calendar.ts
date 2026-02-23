@@ -1,5 +1,5 @@
 /**
- * Contacts & Calendar Client — SecureClaw fork with defensive response parsing.
+ * Contacts & Calendar Client — ArgusClaw fork with defensive response parsing.
  *
  * Changes from upstream (github:MadLlama25/fastmail-mcp v1.6.1):
  * - All JMAP response accesses use extractMethodResponse() for null-safety

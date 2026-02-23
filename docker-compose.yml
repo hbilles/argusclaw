@@ -1,3 +1,5 @@
+name: argusclaw
+
 services:
   gateway:
     build:
@@ -19,12 +21,12 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - SOCKET_PATH=/tmp/sockets/secureclaw.sock
+      - SOCKET_PATH=/tmp/sockets/argusclaw.sock
       - AUDIT_DIR=/data/audit
       - CAPABILITY_SECRET=${CAPABILITY_SECRET}
-      - SECURECLAW_CONFIG=/app/config/secureclaw.yaml
+      - ARGUSCLAW_CONFIG=/app/config/argusclaw.yaml
       # HOST_HOME tells the config loader the host machine's home directory
-      # so that ~ in secureclaw.yaml resolves to host paths (not container paths).
+      # so that ~ in argusclaw.yaml resolves to host paths (not container paths).
       # This is critical because executor bind mounts reference the HOST filesystem.
       - HOST_HOME=${HOME}
       # Phase 5: OAuth encryption key (for encrypted token storage)
@@ -33,7 +35,7 @@ services:
       - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
       # Phase 8: MCP proxy port for domain-filtered outbound from MCP containers
       - MCP_PROXY_PORT=${MCP_PROXY_PORT:-0}
-      # Phase 8: MCP server credentials (resolved by "from_env" in secureclaw.yaml)
+      # Phase 8: MCP server credentials (resolved by "from_env" in argusclaw.yaml)
       - FASTMAIL_API_TOKEN=${FASTMAIL_API_TOKEN:-}
       - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN:-}
       # Dashboard: bind to all interfaces inside the container so Docker
@@ -63,7 +65,7 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
-      - SOCKET_PATH=/tmp/sockets/secureclaw.sock
+      - SOCKET_PATH=/tmp/sockets/argusclaw.sock
     depends_on:
       gateway:
         condition: service_started
@@ -78,7 +80,7 @@ services:
     build:
       context: .
       dockerfile: packages/executor-shell/Dockerfile
-    image: secureclaw-executor-shell
+    image: argusclaw-executor-shell
     profiles:
       - build
 
@@ -86,7 +88,7 @@ services:
     build:
       context: .
       dockerfile: packages/executor-file/Dockerfile
-    image: secureclaw-executor-file
+    image: argusclaw-executor-file
     profiles:
       - build
 
@@ -96,7 +98,7 @@ services:
     build:
       context: .
       dockerfile: packages/executor-web/Dockerfile
-    image: secureclaw-executor-web
+    image: argusclaw-executor-web
     profiles:
       - build
 
@@ -106,7 +108,7 @@ services:
     build:
       context: .
       dockerfile: packages/executor-mcp/Dockerfile
-    image: secureclaw-executor-mcp
+    image: argusclaw-executor-mcp
     profiles:
       - build
 

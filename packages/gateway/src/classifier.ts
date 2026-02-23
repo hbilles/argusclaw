@@ -14,8 +14,8 @@
  */
 
 import picomatch from 'picomatch';
-import type { ActionTier } from '@secureclaw/shared';
-import type { ActionCondition, SecureClawConfig } from './config.js';
+import type { ActionTier } from '@argusclaw/shared';
+import type { ActionCondition, ArgusClawConfig } from './config.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -40,13 +40,13 @@ export interface ClassificationResult {
  *
  * @param toolName - The tool being called (e.g., 'write_file')
  * @param toolInput - The tool call arguments from the LLM
- * @param config - The loaded SecureClaw configuration
+ * @param config - The loaded ArgusClaw configuration
  * @returns The classification result with tier and whether a rule explicitly matched
  */
 export function classifyAction(
   toolName: string,
   toolInput: Record<string, unknown>,
-  config: SecureClawConfig,
+  config: ArgusClawConfig,
 ): ClassificationResult {
   const tiers: Array<{ tier: ActionTier; rules: ActionCondition[] }> = [
     { tier: 'auto-approve', rules: config.actionTiers.autoApprove },

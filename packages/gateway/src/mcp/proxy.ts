@@ -206,7 +206,7 @@ export class McpProxy {
     const targetSocket = net.connect(targetPort, targetDomain, () => {
       clientSocket.write(
         'HTTP/1.1 200 Connection Established\r\n' +
-        'Proxy-Agent: SecureClaw-MCP-Proxy\r\n' +
+        'Proxy-Agent: ArgusClaw-MCP-Proxy\r\n' +
         '\r\n',
       );
 

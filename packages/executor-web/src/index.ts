@@ -1,5 +1,5 @@
 /**
- * SecureClaw Web Executor — headless browser in a sandboxed container.
+ * ArgusClaw Web Executor — headless browser in a sandboxed container.
  *
  * The highest-risk executor component. Runs Playwright with Chromium
  * inside a Docker container with strict network controls.
@@ -28,7 +28,7 @@
  */
 
 import { chromium, type Browser, type Page } from 'playwright-core';
-import { verifyCapabilityToken, type Capability } from '@secureclaw/shared';
+import { verifyCapabilityToken, type Capability } from '@argusclaw/shared';
 import { DNSProxy } from './dns-proxy.js';
 import {
   captureAccessibilityTree,
@@ -243,7 +243,7 @@ async function main(): Promise<void> {
     });
 
     const context = await browser.newContext({
-      userAgent: 'SecureClaw/1.0 (AI Assistant; +https://github.com/secureclaw)',
+      userAgent: 'ArgusClaw/1.0 (AI Assistant; +https://github.com/argusclaw)',
       viewport: { width: 1280, height: 720 },
       javaScriptEnabled: true,
     });

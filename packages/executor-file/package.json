@@ -1,5 +1,5 @@
 {
-  "name": "@secureclaw/executor-file",
+  "name": "@argusclaw/executor-file",
   "version": "0.1.0",
   "private": true,
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@secureclaw/shared": "*"
+    "@argusclaw/shared": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

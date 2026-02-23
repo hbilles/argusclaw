@@ -106,7 +106,7 @@ export class McpManager {
    * 2. Create McpClient from the container's stdin/stdout
    * 3. Initialize the MCP connection (handshake)
    * 4. Discover tools via tools/list
-   * 5. Translate and filter tools into SecureClaw ToolDefinition[]
+   * 5. Translate and filter tools into ArgusClaw ToolDefinition[]
    */
   async startServer(config: McpServerConfig): Promise<void> {
     const serverName = config.name;
@@ -140,7 +140,7 @@ export class McpManager {
       `[mcp-manager] ${serverName}: discovered ${rawTools.length} tool(s)`,
     );
 
-    // Translate to SecureClaw ToolDefinition[] with prefix and filtering
+    // Translate to ArgusClaw ToolDefinition[] with prefix and filtering
     const tools = this.translateTools(serverName, rawTools, config);
     console.log(
       `[mcp-manager] ${serverName}: exposing ${tools.length} tool(s) to LLM`,
@@ -308,7 +308,7 @@ export class McpManager {
   // -------------------------------------------------------------------------
 
   /**
-   * Translate MCP tool definitions into SecureClaw ToolDefinition[].
+   * Translate MCP tool definitions into ArgusClaw ToolDefinition[].
    *
    * - Prefixes tool names with "mcp_{serverName}__"
    * - Converts MCP inputSchema to ToolDefinition.parameters

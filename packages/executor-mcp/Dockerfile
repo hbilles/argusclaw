@@ -1,4 +1,4 @@
-# SecureClaw MCP Executor — Generic base image for MCP servers.
+# ArgusClaw MCP Executor — Generic base image for MCP servers.
 #
 # MCP servers run as long-lived containers (unlike shell/file/web executors
 # which are created per task). This image provides:

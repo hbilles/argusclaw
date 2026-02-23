@@ -270,7 +270,7 @@ export class OpenAICodexOAuthService {
 
       if (errorCode) {
         res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end('OAuth authorization was denied. Return to SecureClaw and retry /connect codex.');
+        res.end('OAuth authorization was denied. Return to ArgusClaw and retry /connect codex.');
         if (state) {
           const pending = this.pendingByState.get(state);
           if (pending) {
@@ -300,10 +300,10 @@ export class OpenAICodexOAuthService {
 
       await this.completeWithCode(pending.userId, state, code);
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end('SecureClaw Codex OAuth login complete. You can close this tab.');
+      res.end('ArgusClaw Codex OAuth login complete. You can close this tab.');
       this.onAsyncStatus?.(
         pending.chatId,
-        '✅ Codex OAuth login completed. SecureClaw is now authenticated.',
+        '✅ Codex OAuth login completed. ArgusClaw is now authenticated.',
       );
     } catch {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
@@ -484,7 +484,7 @@ export class OpenAICodexOAuthService {
     url.searchParams.set('code_challenge', codeChallenge);
     url.searchParams.set('code_challenge_method', 'S256');
     url.searchParams.set('state', state);
-    url.searchParams.set('originator', 'secureclaw');
+    url.searchParams.set('originator', 'argusclaw');
     url.searchParams.set('id_token_add_organizations', 'true');
     url.searchParams.set('codex_cli_simplified_flow', 'true');
 

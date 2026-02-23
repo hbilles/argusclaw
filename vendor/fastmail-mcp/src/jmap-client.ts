@@ -1,5 +1,5 @@
 /**
- * JMAP Client — SecureClaw fork with defensive response parsing.
+ * JMAP Client — ArgusClaw fork with defensive response parsing.
  *
  * Changes from upstream (github:MadLlama25/fastmail-mcp v1.6.1):
  * - Added extractMethodResponse() helper for safe JMAP response parsing

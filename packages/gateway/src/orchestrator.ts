@@ -36,9 +36,9 @@ import type {
 import type { Dispatcher } from './dispatcher.js';
 import type { HITLGate } from './hitl-gate.js';
 import type { DomainManager } from './domain-manager.js';
-import type { ExecutorResult } from '@secureclaw/shared';
+import type { ExecutorResult } from '@argusclaw/shared';
 import type { AuditLogger } from './audit.js';
-import type { SecureClawConfig } from './config.js';
+import type { ArgusClawConfig } from './config.js';
 import type { MemoryStore, MemoryCategory } from './memory.js';
 import type { PromptBuilder } from './prompt-builder.js';
 import type { GmailService } from './services/gmail.js';
@@ -157,7 +157,7 @@ const MEMORY_TOOLS: ToolDefinition[] = [
         },
         topic: {
           type: 'string',
-          description: 'Short key for this memory (e.g., "coding style", "project:secureclaw")',
+          description: 'Short key for this memory (e.g., "coding style", "project:argusclaw")',
         },
         content: {
           type: 'string',
@@ -471,7 +471,7 @@ export class Orchestrator {
   private dispatcher: Dispatcher;
   private hitlGate: HITLGate;
   private auditLogger: AuditLogger;
-  private config: SecureClawConfig;
+  private config: ArgusClawConfig;
   private memoryStore: MemoryStore | null = null;
   private promptBuilder: PromptBuilder | null = null;
 
@@ -497,7 +497,7 @@ export class Orchestrator {
     dispatcher: Dispatcher,
     hitlGate: HITLGate,
     auditLogger: AuditLogger,
-    config: SecureClawConfig,
+    config: ArgusClawConfig,
   ) {
     this.provider = provider;
     this.dispatcher = dispatcher;
@@ -1328,7 +1328,7 @@ export class Orchestrator {
     console.log(`[orchestrator] Domain pre-flight: ${hostname} not in allowed list, requesting approval`);
 
     // Send a domain-specific approval request through the HITL gate
-    const approvalRequest: import('@secureclaw/shared').ApprovalRequest = {
+    const approvalRequest: import('@argusclaw/shared').ApprovalRequest = {
       type: 'approval-request',
       approvalId: '', // Will be set by the gate
       toolName: 'browse_web',
@@ -1379,7 +1379,7 @@ export class Orchestrator {
 
     let prompt = soulContent
       ? soulContent + '\n\n'
-      : 'You are SecureClaw, a personal AI assistant with the ability to interact with the ' +
+      : 'You are ArgusClaw, a personal AI assistant with the ability to interact with the ' +
         'filesystem, run shell commands, browse the web, and manage email, calendar, and GitHub.\n\n';
 
     prompt +=

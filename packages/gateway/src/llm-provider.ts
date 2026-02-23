@@ -1,7 +1,7 @@
 /**
  * Provider-agnostic LLM types and interface.
  *
- * All LLM interaction in SecureClaw flows through this interface.
+ * All LLM interaction in ArgusClaw flows through this interface.
  * Provider implementations (Anthropic, OpenAI, LM Studio) translate
  * between these types and their native SDK formats.
  */

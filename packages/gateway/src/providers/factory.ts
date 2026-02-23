@@ -1,16 +1,16 @@
 /**
  * LLM provider factory — creates the appropriate provider
- * based on the secureclaw.yaml configuration.
+ * based on the argusclaw.yaml configuration.
  */
 
 import type { LLMProvider } from '../llm-provider.js';
-import type { SecureClawConfig } from '../config.js';
+import type { ArgusClawConfig } from '../config.js';
 import { AnthropicProvider } from './anthropic.js';
 import { CodexProvider } from './codex.js';
 import { OpenAIProvider } from './openai.js';
 
 export function createLLMProvider(
-  config: SecureClawConfig,
+  config: ArgusClawConfig,
   options?: {
     codexOAuthResolver?: {
       getValidAccessCredentials(): Promise<{ accessToken: string; accountId: string }>;

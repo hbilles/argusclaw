@@ -127,8 +127,8 @@ export class McpContainerManager {
         NanoCpus: Math.floor((config.cpuLimit ?? 1) * 1e9),
       },
       Labels: {
-        'secureclaw.type': 'mcp',
-        'secureclaw.server': serverName,
+        'argusclaw.type': 'mcp',
+        'argusclaw.server': serverName,
       },
     };
 

@@ -1,5 +1,5 @@
 /**
- * Configuration loader — reads and validates secureclaw.yaml.
+ * Configuration loader — reads and validates argusclaw.yaml.
  *
  * Handles:
  * - YAML parsing
@@ -15,7 +15,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { parse as parseYAML } from 'yaml';
-import type { ActionTier } from '@secureclaw/shared';
+import type { ActionTier } from '@argusclaw/shared';
 
 // ---------------------------------------------------------------------------
 // Configuration Types
@@ -123,7 +123,7 @@ export interface McpServerConfig {
   enabled?: boolean;
 }
 
-export interface SecureClawConfig {
+export interface ArgusClawConfig {
   llm: {
     provider: string;
     model: string;
@@ -172,17 +172,17 @@ export interface SecureClawConfig {
 // Loader
 // ---------------------------------------------------------------------------
 
-const DEFAULT_CONFIG_PATH = 'config/secureclaw.yaml';
+const DEFAULT_CONFIG_PATH = 'config/argusclaw.yaml';
 
 /**
- * Load and validate the SecureClaw configuration file.
+ * Load and validate the ArgusClaw configuration file.
  *
  * Resolves ~ to the actual home directory in mount paths.
  * Warns (but does not error) if host paths don't exist, since the
  * Gateway may run inside Docker where host paths aren't visible.
  */
-export function loadConfig(configPath?: string): SecureClawConfig {
-  const filePath = configPath ?? process.env['SECURECLAW_CONFIG'] ?? DEFAULT_CONFIG_PATH;
+export function loadConfig(configPath?: string): ArgusClawConfig {
+  const filePath = configPath ?? process.env['ARGUSCLAW_CONFIG'] ?? DEFAULT_CONFIG_PATH;
 
   console.log(`[config] Loading configuration from ${filePath}`);
 
@@ -191,7 +191,7 @@ export function loadConfig(configPath?: string): SecureClawConfig {
   }
 
   const raw = fs.readFileSync(filePath, 'utf-8');
-  const config = parseYAML(raw) as SecureClawConfig;
+  const config = parseYAML(raw) as ArgusClawConfig;
 
   // Resolve ~ in mount host paths to the actual home directory
   for (const mount of config.mounts) {
@@ -227,7 +227,7 @@ export function loadConfig(configPath?: string): SecureClawConfig {
   // Defaults for Phase 5 fields
   if (!config.executors.web) {
     config.executors.web = {
-      image: 'secureclaw-executor-web',
+      image: 'argusclaw-executor-web',
       memoryLimit: '1g',
       cpuLimit: 2,
       defaultTimeout: 120,

@@ -1,5 +1,5 @@
 /**
- * Web Dashboard — localhost-only web interface for SecureClaw.
+ * Web Dashboard — localhost-only web interface for ArgusClaw.
  *
  * Serves the chat UI and admin panels, plus REST/SSE API endpoints:
  * - GET  /                         → Main HTML page (static)
@@ -27,7 +27,7 @@ import * as path from 'node:path';
 import type { AuditLogger } from './audit.js';
 import type { MemoryStore } from './memory.js';
 import type { ApprovalStore } from './approval-store.js';
-import type { SecureClawConfig } from './config.js';
+import type { ArgusClawConfig } from './config.js';
 import type { Orchestrator } from './orchestrator.js';
 import type { SessionManager } from './session.js';
 import type { HITLGate } from './hitl-gate.js';
@@ -49,7 +49,7 @@ export interface DashboardDeps {
   auditLogger: AuditLogger;
   memoryStore: MemoryStore;
   approvalStore: ApprovalStore;
-  config: SecureClawConfig;
+  config: ArgusClawConfig;
   orchestrator: Orchestrator;
   sessionManager: SessionManager;
   hitlGate: HITLGate;

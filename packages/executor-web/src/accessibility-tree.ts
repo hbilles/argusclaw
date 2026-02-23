@@ -6,10 +6,10 @@
  * a compact text format that gives the LLM enough structure to navigate.
  *
  * Example output:
- *   [page] Title: "GitHub - secureclaw"
- *     [heading:1] "SecureClaw"
+ *   [page] Title: "GitHub - argusclaw"
+ *     [heading:1] "ArgusClaw"
  *     [paragraph] "A security-first personal AI agent framework"
- *     [link] "Code" → href="/secureclaw/secureclaw"
+ *     [link] "Code" → href="/argusclaw/argusclaw"
  *     [button] "Star 42"
  *     [input:text] placeholder="Search or jump to..."
  */

@@ -1,5 +1,5 @@
 /**
- * SecureClaw Shell Executor
+ * ArgusClaw Shell Executor
  *
  * Minimal container entry point that:
  * 1. Reads CAPABILITY_TOKEN and TASK from environment
@@ -16,7 +16,7 @@
  * - Output size limited by maxOutputBytes
  */
 
-import { verifyCapabilityToken } from '@secureclaw/shared';
+import { verifyCapabilityToken } from '@argusclaw/shared';
 import { spawn } from 'node:child_process';
 
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { AuditEntry } from '@secureclaw/shared';
+import type { AuditEntry } from '@argusclaw/shared';
 
 const DEFAULT_AUDIT_DIR = '/data/audit';
 

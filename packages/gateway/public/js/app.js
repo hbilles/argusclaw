@@ -1,10 +1,10 @@
 /**
- * SecureClaw Dashboard — Alpine.js application.
+ * ArgusClaw Dashboard — Alpine.js application.
  * Chat interface with admin panel sidebar.
  */
 
 document.addEventListener('alpine:init', () => {
-  Alpine.data('secureclaw', () => ({
+  Alpine.data('argusclaw', () => ({
     // UI state
     activePanel: 'chat',
     sidebarOpen: true,

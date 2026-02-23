@@ -1,4 +1,4 @@
-# SecureClaw Configuration
+# ArgusClaw Configuration
 # Phase 6: Multi-provider LLM support
 
 # LLM provider configuration.
@@ -40,21 +40,21 @@ llm:
 
 executors:
   shell:
-    image: secureclaw-executor-shell
+    image: argusclaw-executor-shell
     memoryLimit: 512m
     cpuLimit: 1
     defaultTimeout: 60
     defaultMaxOutput: 1048576  # 1MB
 
   file:
-    image: secureclaw-executor-file
+    image: argusclaw-executor-file
     memoryLimit: 256m
     cpuLimit: 0.5
     defaultTimeout: 30
     defaultMaxOutput: 5242880  # 5MB
 
   web:
-    image: secureclaw-executor-web
+    image: argusclaw-executor-web
     memoryLimit: 1g
     cpuLimit: 2
     defaultTimeout: 120
@@ -91,7 +91,7 @@ mounts:
     readOnly: true
 
   - name: sandbox
-    hostPath: ~/secureclaw-sandbox
+    hostPath: ~/argusclaw-sandbox
     containerPath: /sandbox
     readOnly: false
 
@@ -209,7 +209,7 @@ ownGitHubRepos: []
 # process.env at container start time. Never put secrets directly in this file.
 mcpServers:
   - name: fastmail
-    image: secureclaw-executor-mcp
+    image: argusclaw-executor-mcp
     command: node
     args: ["/opt/fastmail-mcp/dist/index.js"]
     env:
@@ -224,7 +224,7 @@ mcpServers:
 
   # Example: GitHub MCP server (needs network)
   # - name: github
-  #   image: secureclaw-executor-mcp
+  #   image: argusclaw-executor-mcp
   #   command: /opt/mcp-github/github-mcp-server
   #   args: ["stdio"]
   #   env:
@@ -238,7 +238,7 @@ mcpServers:
   #
   # Example: Filesystem MCP server (no network)
   # - name: filesystem
-  #   image: secureclaw-executor-mcp
+  #   image: argusclaw-executor-mcp
   #   command: npx
   #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
   #   transport: stdio

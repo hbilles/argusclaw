@@ -37,7 +37,7 @@ export interface SoulVersion {
 const DEFAULT_DB_PATH = '/data/soul.db';
 
 const FALLBACK_IDENTITY =
-  'You are SecureClaw, a personal AI assistant. Be helpful, concise, and direct.';
+  'You are ArgusClaw, a personal AI assistant. Be helpful, concise, and direct.';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS soul_versions (

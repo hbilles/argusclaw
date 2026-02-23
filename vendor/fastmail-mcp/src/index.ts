@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Fastmail MCP Server — SecureClaw fork of github:MadLlama25/fastmail-mcp v1.6.1
+ * Fastmail MCP Server — ArgusClaw fork of github:MadLlama25/fastmail-mcp v1.6.1
  *
  * Changes from upstream:
  * - @modelcontextprotocol/sdk upgraded from ^0.6.0 to ^1.26.0
@@ -22,7 +22,7 @@ import { ContactsCalendarClient } from './contacts-calendar.js';
 const server = new Server(
   {
     name: 'fastmail-mcp',
-    version: '1.0.0-secureclaw.1',
+    version: '1.0.0-argusclaw.1',
   },
   {
     capabilities: {

@@ -13,7 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { Session } from '@secureclaw/shared';
+import type { Session } from '@argusclaw/shared';
 
 const MAX_MESSAGES = 50;
 const SESSION_TTL_MS = 60 * 60 * 1000;       // 1 hour

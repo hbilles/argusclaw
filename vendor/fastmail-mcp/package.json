@@ -1,7 +1,7 @@
 {
   "name": "fastmail-mcp",
-  "version": "1.0.0-secureclaw.1",
-  "description": "Fastmail MCP server (SecureClaw fork of github:MadLlama25/fastmail-mcp v1.6.1)",
+  "version": "1.0.0-argusclaw.1",
+  "description": "Fastmail MCP server (ArgusClaw fork of github:MadLlama25/fastmail-mcp v1.6.1)",
   "main": "dist/index.js",
   "type": "module",
   "bin": {

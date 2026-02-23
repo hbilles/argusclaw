@@ -126,7 +126,7 @@ function getEncryptionKey(): string {
   let keychainValue: string | null = null;
   try {
     keychainValue = execSync(
-      'security find-generic-password -s "secureclaw-oauth" -w 2>/dev/null',
+      'security find-generic-password -s "argusclaw-oauth" -w 2>/dev/null',
       { encoding: 'utf-8', timeout: 5000 },
     ).trim();
   } catch {
@@ -147,7 +147,7 @@ function getEncryptionKey(): string {
   throw new Error(
     'No OAuth encryption key available. ' +
     'Set OAUTH_KEY env var or store in macOS Keychain: ' +
-    'security add-generic-password -s "secureclaw-oauth" -a "secureclaw" -w "your-passphrase"',
+    'security add-generic-password -s "argusclaw-oauth" -a "argusclaw" -w "your-passphrase"',
   );
 }
 

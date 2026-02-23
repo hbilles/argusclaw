@@ -56,7 +56,7 @@ export function mintCapabilityToken(
     {
       algorithm: 'HS256',
       expiresIn: ttlSeconds,
-      issuer: 'secureclaw-gateway',
+      issuer: 'argusclaw-gateway',
     },
   );
 
@@ -75,7 +75,7 @@ export function verifyCapabilityToken(
 ): Capability {
   const payload = jwt.verify(token, secretKey, {
     algorithms: ['HS256'],
-    issuer: 'secureclaw-gateway',
+    issuer: 'argusclaw-gateway',
   }) as { cap: Capability };
 
   if (!payload.cap || !payload.cap.executorType) {

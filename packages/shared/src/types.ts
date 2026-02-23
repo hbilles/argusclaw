@@ -1,5 +1,5 @@
 /**
- * Core types for the SecureClaw framework.
+ * Core types for the ArgusClaw framework.
  */
 
 /** Internal message format — all bridges convert to/from this */
