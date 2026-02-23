@@ -187,6 +187,8 @@ heartbeats:
     schedule: "0 8 * * 1-5"        # 8am weekdays
     prompt: "Give me a brief morning summary: any important emails from overnight, calendar events for today, and any ongoing task updates."
     enabled: true
+    # channel: "slack:C0123456789"  # Optional: send to a specific Slack channel.
+                                    # Omit to use the default (first allowed user's DM).
 
   - name: email-check
     schedule: "*/30 * * * *"        # Every 30 minutes

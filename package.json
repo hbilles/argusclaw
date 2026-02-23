@@ -7,7 +7,10 @@
   ],
   "scripts": {
     "dev": "concurrently -n gateway,bridge -c blue,green \"npm run dev -w packages/gateway\" \"npm run dev -w packages/bridge-telegram\"",
+    "dev:slack": "concurrently -n gateway,slack -c blue,magenta \"npm run dev -w packages/gateway\" \"npm run dev -w packages/bridge-slack\"",
+    "dev:all": "concurrently -n gateway,telegram,slack -c blue,green,magenta \"npm run dev -w packages/gateway\" \"npm run dev -w packages/bridge-telegram\" \"npm run dev -w packages/bridge-slack\"",
     "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces --if-present",
     "docker:up": "docker compose up --build"
   },
   "devDependencies": {

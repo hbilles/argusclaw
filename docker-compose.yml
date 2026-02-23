@@ -71,6 +71,24 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  bridge-slack:
+    build:
+      context: .
+      dockerfile: packages/bridge-slack/Dockerfile
+    volumes:
+      - socket-vol:/tmp/sockets
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN:-}
+      - SLACK_ALLOWED_USER_IDS=${SLACK_ALLOWED_USER_IDS:-}
+      - SOCKET_PATH=/tmp/sockets/argusclaw.sock
+    depends_on:
+      gateway:
+        condition: service_started
+    profiles:
+      - slack
+    restart: unless-stopped
+
   # Executor images — built but NOT run as services.
   # The Gateway creates these containers dynamically via the Dispatcher.
   # Use `docker compose build` to build all images including executors.

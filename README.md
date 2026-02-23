@@ -14,19 +14,19 @@ A security-first personal AI agent framework in TypeScript. Security boundaries 
 
 3. **Manager Blindness** — The Gateway (the "brain") never touches files, runs commands, or reads raw data directly. It plans and delegates. A prompt injection cannot gain direct tool access because the LLM process has no tools of its own.
 
-4. **Human-in-the-Loop Gate** — Irreversible actions (send email, write outside sandbox, create GitHub issues) require explicit user approval via Telegram inline buttons or the web dashboard's chat interface. Classification is performed in code by the Gateway, not self-reported by the LLM.
+4. **Human-in-the-Loop Gate** — Irreversible actions (send email, write outside sandbox, create GitHub issues) require explicit user approval via messaging interface buttons (Telegram inline keyboards, Slack Block Kit, or the web dashboard). Classification is performed in code by the Gateway, not self-reported by the LLM.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │ INTERFACE                                                           │
-│ ┌────────────────────────────┐  ┌────────────────────────────────┐  │
-│ │ Telegram Bridge (grammY)   │  │ Web Dashboard (localhost)      │  │
-│ │ Long-polling · allowlist   │  │ Chat UI · HITL approvals       │  │
-│ │                            │  │ Admin panels · SSE streaming   │  │
-│ └────────────────────────────┘  └────────────────────────────────┘  │
-│          Unix socket                       HTTP :3333               │
+│ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────────┐  │
+│ │ Telegram Bridge  │ │ Slack Bridge     │ │ Web Dashboard        │  │
+│ │ grammY · polling │ │ Bolt · Socket    │ │ Chat UI · HITL       │  │
+│ │ allowlist        │ │ Mode · allowlist │ │ Admin · SSE          │  │
+│ └──────────────────┘ └──────────────────┘ └──────────────────────┘  │
+│    Unix socket          Unix socket             HTTP :3333          │
 ├─────────────────────────────────────────────────────────────────────┤
 │ GATEWAY                                                             │
 │ ┌───────────────────────────────────────────────────────────────┐   │
@@ -102,6 +102,11 @@ argusclaw/
 │   │       └── index.ts             # grammY bot, allowlist, inline keyboards,
 │   │                                # commands: /memories /forget /sessions /stop /heartbeats
 │   │
+│   ├── bridge-slack/        # Slack ↔ Gateway adapter
+│   │   └── src/
+│   │       └── index.ts             # Bolt app, Socket Mode, Block Kit approvals,
+│   │                                # slash commands, thread support, mrkdwn formatting
+│   │
 │   ├── executor-shell/      # Sandboxed command execution
 │   │   └── src/
 │   │       └── index.ts             # Receives task, validates capability token, runs command
@@ -134,7 +139,7 @@ argusclaw/
 │   ├── argusclaw.yaml          # Local runtime config (gitignored)
 │   ├── soul.example.md          # Committed soul identity template
 │   └── soul.md                  # Local soul identity file (gitignored)
-├── docker-compose.yml        # Gateway + Bridge as services; executors built but not run
+├── docker-compose.yml        # Gateway + Bridges as services; executors built but not run
 ├── .env.example              # Required environment variables
 └── package.json              # npm workspaces monorepo root
 ```
@@ -144,11 +149,12 @@ argusclaw/
 ### Message Lifecycle
 
 ```
-User (Telegram/Web) → Bridge/Dashboard → Gateway → LLM → [tool calls] → Executors → LLM → User
+User (Telegram/Slack/Web) → Bridge/Dashboard → Gateway → LLM → [tool calls] → Executors → LLM → User
 ```
 
-1. **Receive** — Messages arrive from one of two interfaces:
+1. **Receive** — Messages arrive from one of three interfaces:
    - **Telegram**: The Bridge polls the Bot API via grammY, validates the sender against the allowlist, and sends the message to the Gateway over a Unix domain socket (JSON-lines protocol).
+   - **Slack**: The Bridge connects via Socket Mode (@slack/bolt), validates the sender against a separate Slack user ID allowlist, and sends the message to the Gateway over the same Unix socket protocol. Channel mentions reply in threads; DMs reply flat. Chat IDs are namespaced as `slack:{channelId}`.
    - **Web Dashboard**: The user sends a message via the chat UI at `http://localhost:3333`. The dashboard calls the orchestrator directly (in-process) and streams events back via Server-Sent Events.
 
 2. **Plan** — The Gateway loads the user's session and relevant memories, assembles a system prompt (with memories, available tools, and session context), and sends it to the configured LLM provider. The LLM responds with either a text reply or tool call blocks.
@@ -156,7 +162,7 @@ User (Telegram/Web) → Bridge/Dashboard → Gateway → LLM → [tool calls] �
 3. **Gate** — For each tool call, the HITL Gate classifies the action into one of three tiers based on the tool name and its inputs (path patterns, working directory, etc.):
    - **auto-approve**: Safe read operations (read file, search, list directory, search email)
    - **notify**: Moderate-risk operations (write to sandbox, browse trusted domains) — executes and notifies the user
-   - **require-approval**: Irreversible actions (send email, write outside sandbox, create GitHub issue) — pauses execution and sends an approval request to both Telegram (inline keyboard) and the web dashboard (inline buttons). The first response from either channel wins.
+   - **require-approval**: Irreversible actions (send email, write outside sandbox, create GitHub issue) — pauses execution and sends an approval request to all connected interfaces (Telegram inline keyboard, Slack Block Kit buttons, and/or web dashboard inline buttons). The first response from any channel wins.
 
    If the user selects **Allow for Session** on an approval request, future matching actions in the same session are automatically downgraded to `notify` tier.
 
@@ -165,7 +171,7 @@ User (Telegram/Web) → Bridge/Dashboard → Gateway → LLM → [tool calls] �
    - **Service tools** (Gmail, Calendar, GitHub): Execute in-process within the Gateway using OAuth tokens.
    - **MCP tools** (prefixed `mcp_{server}__`): Routed through the McpManager, which sends JSON-RPC requests over Docker attach stdio to the appropriate long-lived MCP server container and returns the result.
 
-5. **Respond** — Tool results are fed back to the LLM for synthesis. The loop repeats (up to 10 iterations) until the LLM responds with plain text. The final response flows back through the bridge to Telegram. Every step is logged to the append-only audit trail.
+5. **Respond** — Tool results are fed back to the LLM for synthesis. The loop repeats (up to 10 iterations) until the LLM responds with plain text. The final response flows back through the bridge to the originating interface. Every step is logged to the append-only audit trail.
 
 ### Multi-Step Tasks (Ralph Wiggum Loop)
 
@@ -186,7 +192,7 @@ Users can cancel in-progress tasks with the `/stop` command.
 
 ### Proactive Heartbeats
 
-The scheduler triggers cron-based heartbeats (e.g., morning briefing at 8am weekdays, periodic email checks). Each heartbeat creates a fresh session with a predefined prompt. The HITL gate still applies — a heartbeat that triggers a dangerous action requires approval like any other request.
+The scheduler triggers cron-based heartbeats (e.g., morning briefing at 8am weekdays, periodic email checks). Each heartbeat creates a fresh session with a predefined prompt. Heartbeats can optionally target a specific channel (e.g., `channel: "slack:C0123456789"` in config). The HITL gate still applies — a heartbeat that triggers a dangerous action requires approval like any other request.
 
 ## Tools
 
@@ -282,7 +288,8 @@ Every executor runs in a separate Docker container with:
 - MCP servers (no network): `--network=none`, same as shell/file executors
 - MCP servers (with network): iptables restrict all outbound to the Gateway's MCP proxy only. The proxy is an HTTP CONNECT proxy that filters each HTTPS tunnel request against the server's per-container domain allowlist. Direct outbound (bypassing the proxy) is impossible — iptables DROP rule blocks everything except loopback, DNS, and the proxy address. Vendored MCP servers (pre-built into the image) need only their API domain in the allowlist (e.g., `api.fastmail.com`), with no npm registry or GitHub access required.
 - Gateway: Outbound HTTPS only (LLM API, Google APIs, GitHub API)
-- Bridge: Outbound to Telegram API only
+- Telegram Bridge: Outbound to Telegram API only
+- Slack Bridge: Outbound to Slack API only (Socket Mode WebSocket)
 
 ### L3 — Capability Tokens
 
@@ -296,7 +303,7 @@ The executor runtime validates the token before executing anything.
 
 ### L4 — Human-in-the-Loop Gate
 
-Actions are classified by the Gateway in code, not by the LLM. The classification rules in `argusclaw.yaml` match on tool name and input field patterns (e.g., path glob, working directory). If no rule matches, the default is **require-approval** (fail-safe). For MCP tools, the priority chain is: explicit YAML rule > server's `defaultTier` config > fail-safe `require-approval`. Approval requests are sent to both Telegram (inline keyboard) and the web dashboard (inline buttons) simultaneously, with three options: **Approve** (one-time), **Allow for Session** (auto-approve matching actions for the remainder of the session), or **Reject**. The first response from either channel resolves the request. Session grants expire when the user's session ends.
+Actions are classified by the Gateway in code, not by the LLM. The classification rules in `argusclaw.yaml` match on tool name and input field patterns (e.g., path glob, working directory). If no rule matches, the default is **require-approval** (fail-safe). For MCP tools, the priority chain is: explicit YAML rule > server's `defaultTier` config > fail-safe `require-approval`. Approval requests are sent to all connected interfaces simultaneously — Telegram (inline keyboard), Slack (Block Kit buttons), and/or the web dashboard (inline buttons) — with three options: **Approve** (one-time), **Allow for Session** (auto-approve matching actions for the remainder of the session), or **Reject**. The first response from any channel resolves the request. Session grants expire when the user's session ends.
 
 Web content trust boundary:
 - Structured `browse_web` payloads include explicit untrusted-content markers in the `security` field.
@@ -328,6 +335,11 @@ OPENAI_API_KEY=sk-...               # For openai provider and codex api-key mode
 CAPABILITY_SECRET=random-secret    # Signs executor capability tokens
 OAUTH_KEY=encryption-passphrase   # Optional — encrypts OAuth tokens at rest
 MCP_PROXY_PORT=0                  # Optional — MCP proxy listen port (0 = OS-assigned)
+
+# Slack Bridge (optional — only needed if using bridge-slack)
+SLACK_BOT_TOKEN=xoxb-...           # Bot User OAuth Token
+SLACK_APP_TOKEN=xapp-...           # App-Level Token (Socket Mode)
+SLACK_ALLOWED_USER_IDS=U012,U345   # Comma-separated Slack user IDs
 ```
 
 ### `config/argusclaw.yaml`
@@ -342,7 +354,7 @@ Controls the entire system:
 - **`actionTiers`** — HITL classification rules. Ordered lists of tool + condition patterns for `autoApprove`, `notify`, and `requireApproval`.
 - **`trustedDomains`** — Base domains that downgrade `browse_web` from require-approval to notify tier. Additional domains can be approved dynamically at runtime — when the agent visits an unlisted domain, the user is prompted to allow it for the session.
 - **`soulFile`** — Path to the agent's identity file (default: `./soul.md`, relative to config directory). Start from `config/soul.example.md`.
-- **`heartbeats`** — Cron schedules for proactive agent triggers with prompt templates.
+- **`heartbeats`** — Cron schedules for proactive agent triggers with prompt templates. Each heartbeat can optionally specify a `channel` (e.g., `slack:C0123456789`) to target a specific Slack channel.
 - **`oauth`** — Google, GitHub, and Codex OAuth client credentials for service integrations.
 - **`mcpServers`** — MCP server definitions. Each entry specifies a Docker image, command, optional allowed domains (for network access through the proxy), environment variables (`"from_env"` resolves from host env), mounts, resource limits, a `defaultTier` for HITL classification, and tool filters (`includeTools`, `excludeTools`, `maxTools`). Vendored servers (like Fastmail) use `command: node` with an absolute path to the pre-built dist (e.g., `args: ["/opt/fastmail-mcp/dist/index.js"]`), while community packages can still use `command: npx`.
 
@@ -352,7 +364,10 @@ Controls the entire system:
 
 - Node.js 22+
 - Docker and Docker Compose
-- A Telegram bot token (from [@BotFather](https://t.me/botfather))
+- At least one messaging interface:
+  - **Telegram**: A bot token from [@BotFather](https://t.me/botfather)
+  - **Slack**: A Slack app with Socket Mode enabled (see `docs/slack-setup.md`)
+  - Both can run simultaneously, or either one independently
 - An LLM API key (Anthropic, OpenAI, or none for LM Studio)
 
 ### Setup
@@ -371,19 +386,32 @@ cp config/soul.example.md config/soul.md
 ### Running with Docker (recommended)
 
 ```sh
-# Build all images (including executors) and start the gateway + bridge
+# Gateway + Telegram bridge (default)
 docker compose up --build
+
+# Gateway + Telegram + Slack bridges
+docker compose --profile slack up --build
+
+# Gateway + Slack only (no Telegram)
+docker compose --profile slack up gateway bridge-slack --build
 ```
 
-The gateway and bridge run as persistent services. Executor containers are created on-demand by the gateway's Dispatcher via the Docker socket — they are not long-running services.
+The gateway and bridges run as persistent services. The Slack bridge is opt-in via the `slack` Docker Compose profile. Executor containers are created on-demand by the gateway's Dispatcher via the Docker socket — they are not long-running services.
 
 ### Running in Development
 
 ```sh
+# Gateway + Telegram bridge
 npm run dev
+
+# Gateway + Slack bridge
+npm run dev:slack
+
+# Gateway + Telegram + Slack bridges
+npm run dev:all
 ```
 
-Runs the gateway and bridge-telegram concurrently with watch mode via `concurrently`. Executor containers are still managed via Docker — the gateway needs Docker socket access even in dev mode.
+Runs the gateway and selected bridges concurrently with watch mode via `concurrently`. Executor containers are still managed via Docker — the gateway needs Docker socket access even in dev mode.
 
 ### Web Dashboard
 
@@ -418,6 +446,32 @@ Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only
 | `/auth_status codex` | Show Codex OAuth connection status |
 | `/disconnect codex` | Remove stored Codex OAuth token |
 
+### Slack Commands
+
+> For full Slack app setup instructions, see [`docs/slack-setup.md`](docs/slack-setup.md).
+
+**Slash commands** (require Slack app configuration):
+
+| Command | Description |
+|---------|-------------|
+| `/argus_memories` | List stored memories |
+| `/argus_forget <topic>` | Forget a specific memory |
+| `/argus_sessions` | Show active and recent sessions |
+| `/argus_stop` | Cancel the current multi-step task |
+| `/argus_heartbeats` | List and toggle heartbeat schedules |
+| `/argus_connect <service>` | Start OAuth login |
+| `/argus_auth_status <service>` | Check OAuth connection status |
+| `/argus_disconnect <service>` | Remove stored OAuth token |
+
+**Text commands** (always available, no Slack-side configuration needed):
+
+`!memories`, `!forget <topic>`, `!sessions`, `!stop`, `!heartbeats`, `!heartbeat_enable <name>`, `!heartbeat_disable <name>`
+
+**Usage**:
+- **Channel**: `@ArgusClaw <message>` — replies in a thread to keep the channel clean
+- **DM**: Message the bot directly for private conversations (flat replies)
+- The bot must be invited to a channel first: `/invite @ArgusClaw`
+
 ### OAuth Setup (optional)
 
 To enable service integrations and Codex OAuth:
@@ -428,9 +482,10 @@ To enable service integrations and Codex OAuth:
 2. Set a strong `OAUTH_KEY` (or macOS Keychain entry) for token encryption-at-rest.
 3. If using Codex OAuth, set `llm.codexAuthMode: oauth` and `llm.model` to a Codex model ID (for example `gpt-5-codex` or `gpt-5.3-codex`).
    - ChatGPT OAuth mode accepts Codex-family model IDs only; non-Codex IDs (and sometimes `codex-mini-latest`) are rejected.
-4. Start ArgusClaw, then run `/connect codex` in Telegram and open the returned URL.
+4. Start ArgusClaw, then run `/connect codex` (Telegram) or `/argus_connect codex` (Slack) and open the returned URL.
 5. If callback routing is blocked (e.g., VPS/remote browser), copy the final redirected URL and run:
-   - `/connect codex callback <url-or-code>`
+   - Telegram: `/connect codex callback <url-or-code>`
+   - Slack: `/argus_disconnect codex` then `/argus_connect codex` with the URL
 
 ## Tech Stack
 
@@ -439,7 +494,7 @@ To enable service integrations and Codex OAuth:
 | Language | TypeScript 5.7, ES2022 |
 | Runtime | Node.js 22+ |
 | LLM | Multi-provider: Anthropic Claude, OpenAI GPT, OpenAI Codex, LM Studio |
-| Bot framework | grammY (Telegram Bot API) |
+| Bot framework | grammY (Telegram), @slack/bolt (Slack) |
 | Web UI | Alpine.js (vendored, no build step) |
 | Containers | Docker + Docker Compose |
 | Database | SQLite (better-sqlite3) with FTS5 |

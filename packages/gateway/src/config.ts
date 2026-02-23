@@ -53,6 +53,8 @@ export interface HeartbeatConfig {
   schedule: string;
   prompt: string;
   enabled: boolean;
+  /** Optional target channel (e.g., 'slack:C0123456789'). Defaults to first allowed user's DM. */
+  channel?: string;
 }
 
 export interface OAuthServiceConfig {

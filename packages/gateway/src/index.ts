@@ -296,14 +296,16 @@ async function main(): Promise<void> {
     console.log(`[gateway] Heartbeat "${name}" fired, running prompt through orchestrator`);
 
     // Use the first allowed user ID as the heartbeat user
-    const userId = process.env['ALLOWED_USER_IDS']?.split(',')[0]?.trim();
+    const userId = process.env['ALLOWED_USER_IDS']?.split(',')[0]?.trim()
+      ?? process.env['SLACK_ALLOWED_USER_IDS']?.split(',')[0]?.trim();
     if (!userId) {
-      console.error('[gateway] No ALLOWED_USER_IDS set — cannot run heartbeat');
+      console.error('[gateway] No allowed user IDs set — cannot run heartbeat');
       return;
     }
 
-    // Get the chat ID (same as user ID for Telegram private chats)
-    const chatId = userId;
+    // Determine chatId: prefer per-heartbeat channel, fall back to userId (Telegram private chat)
+    const hbConfig = config.heartbeats.find(h => h.name === name);
+    const chatId = hbConfig?.channel ?? userId;
     const session = sessionManager.getOrCreate(userId);
 
     // Notify the bridge that a heartbeat is firing

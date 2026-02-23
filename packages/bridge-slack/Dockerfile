@@ -1,0 +1,60 @@
+# ---- Build stage ----
+FROM node:22-alpine AS builder
+WORKDIR /app
+
+# Copy root workspace files
+COPY package.json package-lock.json ./
+
+# Copy package.json files for ALL workspace packages.
+# npm ci needs to see them all for lock file resolution.
+COPY packages/shared/package.json packages/shared/
+COPY packages/bridge-slack/package.json packages/bridge-slack/
+COPY packages/bridge-telegram/package.json packages/bridge-telegram/
+COPY packages/gateway/package.json packages/gateway/
+COPY packages/executor-shell/package.json packages/executor-shell/
+COPY packages/executor-file/package.json packages/executor-file/
+
+# Install all dependencies (including devDependencies for build)
+RUN npm ci --workspace=packages/shared --workspace=packages/bridge-slack --include-workspace-root
+
+# Copy source files
+COPY tsconfig.base.json ./
+COPY packages/shared/ packages/shared/
+COPY packages/bridge-slack/ packages/bridge-slack/
+
+# Build shared first, then bridge
+RUN npm run build -w packages/shared && npm run build -w packages/bridge-slack
+
+# ---- Production stage ----
+FROM node:22-alpine
+
+# Create non-root user
+RUN addgroup -S app && adduser -S app -G app
+
+WORKDIR /app
+
+# Copy root workspace files
+COPY package.json package-lock.json ./
+
+# Copy ALL workspace package.json files for npm ci resolution
+COPY packages/shared/package.json packages/shared/
+COPY packages/bridge-slack/package.json packages/bridge-slack/
+COPY packages/bridge-telegram/package.json packages/bridge-telegram/
+COPY packages/gateway/package.json packages/gateway/
+COPY packages/executor-shell/package.json packages/executor-shell/
+COPY packages/executor-file/package.json packages/executor-file/
+
+# Copy built output
+COPY --from=builder /app/packages/shared/dist/ packages/shared/dist/
+COPY --from=builder /app/packages/bridge-slack/dist/ packages/bridge-slack/dist/
+
+# Install production dependencies only
+RUN npm ci --omit=dev --workspace=packages/shared --workspace=packages/bridge-slack --include-workspace-root
+
+# Create socket directory with correct ownership
+RUN mkdir -p /tmp/sockets && chown app:app /tmp/sockets
+
+# Switch to non-root user
+USER app
+
+CMD ["node", "packages/bridge-slack/dist/index.js"]

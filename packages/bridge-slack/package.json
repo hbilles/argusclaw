@@ -1,23 +1,23 @@
 {
-  "name": "@argusclaw/shared",
+  "name": "@argusclaw/bridge-slack",
   "version": "0.1.0",
   "private": true,
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
+    "dev": "tsc --watch & node --watch dist/index.js",
     "clean": "rimraf dist",
+    "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "@argusclaw/shared": "*",
+    "@slack/bolt": "^4.1.0"
+  },
   "devDependencies": {
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
-  },
-  "dependencies": {
-    "jsonwebtoken": "^9.0.3"
   }
 }
