@@ -16,3 +16,6 @@ config/argusclaw.yaml
 # macOS Finder metadata
 .DS_Store
 **/.DS_Store
+
+# Coverage
+coverage/

@@ -11,11 +11,13 @@
     "dev:all": "concurrently -n gateway,telegram,slack -c blue,green,magenta \"npm run dev -w packages/gateway\" \"npm run dev -w packages/bridge-telegram\" \"npm run dev -w packages/bridge-slack\"",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces --if-present",
+    "test:coverage": "vitest run --coverage",
     "docker:up": "docker compose up --build"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "concurrently": "^9.0.0",
-    "rimraf": "^6.0.0"
+    "rimraf": "^6.0.0",
+    "typescript": "^5.7.0"
   }
 }
