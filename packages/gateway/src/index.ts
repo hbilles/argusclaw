@@ -55,6 +55,7 @@ import { GmailService } from './services/gmail.js';
 import { CalendarService } from './services/calendar.js';
 import { GitHubService } from './services/github.js';
 import { OpenAICodexOAuthService } from './services/openai-codex-oauth.js';
+import { GoogleOAuthService } from './services/google-oauth.js';
 import { HeartbeatScheduler } from './scheduler.js';
 import { startDashboard, broadcastSSE } from './dashboard.js';
 // Phase 8: MCP server integration
@@ -139,12 +140,18 @@ async function main(): Promise<void> {
   let calendarService: CalendarService | null = null;
   let githubService: GitHubService | null = null;
   let codexOAuthService: OpenAICodexOAuthService | null = null;
+  let googleOAuthService: GoogleOAuthService | null = null;
 
   try {
     oauthStore = new OAuthStore();
 
-    gmailService = new GmailService(oauthStore);
-    calendarService = new CalendarService(oauthStore);
+    // Pass Google OAuth config to Gmail/Calendar so they can refresh tokens
+    const googleConfig = config.oauth?.google
+      ? { clientId: config.oauth.google.clientId, clientSecret: config.oauth.google.clientSecret }
+      : undefined;
+
+    gmailService = new GmailService(oauthStore, googleConfig);
+    calendarService = new CalendarService(oauthStore, googleConfig);
     githubService = new GitHubService(oauthStore, config.ownGitHubRepos);
     if (config.oauth?.openaiCodex) {
       codexOAuthService = new OpenAICodexOAuthService(
@@ -159,10 +166,27 @@ async function main(): Promise<void> {
         },
       );
     }
+    if (config.oauth?.google) {
+      googleOAuthService = new GoogleOAuthService(
+        oauthStore,
+        config.oauth.google,
+        (chatId: string, message: string) => {
+          socketServer.broadcast({
+            type: 'notification',
+            chatId,
+            text: message,
+          });
+        },
+      );
+    }
 
     const connected: string[] = [];
-    if (gmailService.isConnected()) connected.push('Gmail');
-    if (calendarService.isConnected()) connected.push('Calendar');
+    if (googleOAuthService?.isConnected()) {
+      connected.push('Google (Gmail + Calendar)');
+    } else {
+      if (gmailService.isConnected()) connected.push('Gmail');
+      if (calendarService.isConnected()) connected.push('Calendar');
+    }
     if (githubService.isConnected()) connected.push('GitHub');
     if (codexOAuthService?.isConnected()) connected.push('Codex OAuth');
 
@@ -486,7 +510,113 @@ async function main(): Promise<void> {
     if (raw['type'] === 'auth-connect') {
       const req = data as AuthConnectRequest;
 
-      if (req.service !== 'codex') {
+      if (req.service === 'codex') {
+        if (!codexOAuthService) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'codex',
+            action: 'connect',
+            success: false,
+            message:
+              'Codex OAuth is not configured. Add oauth.openaiCodex.clientId to config/argusclaw.yaml and restart.',
+          });
+          return;
+        }
+
+        try {
+          if (req.callbackInput && req.callbackInput.trim().length > 0) {
+            await codexOAuthService.completeFromCallbackInput(req.userId, req.callbackInput);
+            sendAuthResponse({
+              type: 'auth-response',
+              chatId: req.chatId,
+              service: 'codex',
+              action: 'connect',
+              success: true,
+              message: '✅ Codex OAuth connected successfully.',
+            });
+          } else {
+            const start = await codexOAuthService.startLogin(req.userId, req.chatId);
+            sendAuthResponse({
+              type: 'auth-response',
+              chatId: req.chatId,
+              service: 'codex',
+              action: 'connect',
+              success: true,
+              message:
+                `Open this URL to authenticate Codex:\n${start.authUrl}\n\n` +
+                `This login expires in ${Math.floor(start.expiresInSeconds / 60)} minute(s).\n` +
+                `After sign-in, if localhost callback fails in your browser, copy the URL from that failed localhost page and run:\n` +
+                '`/connect codex callback <url-or-code>`',
+            });
+          }
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'codex',
+            action: 'connect',
+            success: false,
+            message: `Codex OAuth connect failed: ${error.message}`,
+          });
+        }
+      } else if (req.service === 'google') {
+        if (!googleOAuthService) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'google',
+            action: 'connect',
+            success: false,
+            message:
+              'Google OAuth is not configured. Add oauth.google.clientId and clientSecret to config/argusclaw.yaml and restart.',
+          });
+          return;
+        }
+
+        try {
+          if (req.callbackInput && req.callbackInput.trim().length > 0) {
+            await googleOAuthService.completeFromCallbackInput(req.userId, req.callbackInput);
+            // Rebuild tool list so Gmail/Calendar tools appear immediately
+            if (gmailService && calendarService && githubService) {
+              orchestrator.setServices(gmailService, calendarService, githubService);
+            }
+            sendAuthResponse({
+              type: 'auth-response',
+              chatId: req.chatId,
+              service: 'google',
+              action: 'connect',
+              success: true,
+              message: '✅ Google connected successfully. Gmail and Calendar tools are now available.',
+            });
+          } else {
+            const start = await googleOAuthService.startLogin(req.userId, req.chatId);
+            sendAuthResponse({
+              type: 'auth-response',
+              chatId: req.chatId,
+              service: 'google',
+              action: 'connect',
+              success: true,
+              message:
+                `Open this URL to authenticate Google:\n${start.authUrl}\n\n` +
+                `This login expires in ${Math.floor(start.expiresInSeconds / 60)} minute(s).\n` +
+                `After sign-in, if the localhost callback fails in your browser, copy the URL and run:\n` +
+                '`/connect google callback <url-or-code>`',
+            });
+          }
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'google',
+            action: 'connect',
+            success: false,
+            message: `Google OAuth connect failed: ${error.message}`,
+          });
+        }
+      } else {
         sendAuthResponse({
           type: 'auth-response',
           chatId: req.chatId,
@@ -494,58 +624,6 @@ async function main(): Promise<void> {
           action: 'connect',
           success: false,
           message: 'Unsupported auth service.',
-        });
-        return;
-      }
-
-      if (!codexOAuthService) {
-        sendAuthResponse({
-          type: 'auth-response',
-          chatId: req.chatId,
-          service: 'codex',
-          action: 'connect',
-          success: false,
-          message:
-            'Codex OAuth is not configured. Add oauth.openaiCodex.clientId to config/argusclaw.yaml and restart.',
-        });
-        return;
-      }
-
-      try {
-        if (req.callbackInput && req.callbackInput.trim().length > 0) {
-          await codexOAuthService.completeFromCallbackInput(req.userId, req.callbackInput);
-          sendAuthResponse({
-            type: 'auth-response',
-            chatId: req.chatId,
-            service: 'codex',
-            action: 'connect',
-            success: true,
-            message: '✅ Codex OAuth connected successfully.',
-          });
-        } else {
-          const start = await codexOAuthService.startLogin(req.userId, req.chatId);
-          sendAuthResponse({
-            type: 'auth-response',
-            chatId: req.chatId,
-            service: 'codex',
-            action: 'connect',
-            success: true,
-            message:
-              `Open this URL to authenticate Codex:\n${start.authUrl}\n\n` +
-              `This login expires in ${Math.floor(start.expiresInSeconds / 60)} minute(s).\n` +
-              `After sign-in, if localhost callback fails in your browser, copy the URL from that failed localhost page and run:\n` +
-              '`/connect codex callback <url-or-code>`',
-          });
-        }
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        sendAuthResponse({
-          type: 'auth-response',
-          chatId: req.chatId,
-          service: 'codex',
-          action: 'connect',
-          success: false,
-          message: `Codex OAuth connect failed: ${error.message}`,
         });
       }
       return;
@@ -553,62 +631,161 @@ async function main(): Promise<void> {
 
     if (raw['type'] === 'auth-status') {
       const req = data as AuthStatusRequest;
-      if (req.service !== 'codex') {
-        sendAuthResponse({
-          type: 'auth-response',
-          chatId: req.chatId,
-          service: req.service,
-          action: 'status',
-          success: false,
-          message: 'Unsupported auth service.',
-        });
-        return;
-      }
 
-      if (!oauthStore || !codexOAuthService) {
-        sendAuthResponse({
-          type: 'auth-response',
-          chatId: req.chatId,
-          service: 'codex',
-          action: 'status',
-          success: false,
-          message: 'Codex OAuth is not configured.',
-        });
-        return;
-      }
+      if (req.service === 'codex') {
+        if (!oauthStore || !codexOAuthService) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'codex',
+            action: 'status',
+            success: false,
+            message: 'Codex OAuth is not configured.',
+          });
+          return;
+        }
 
-      const token = oauthStore.getToken('openai_codex');
-      if (!token) {
+        const token = oauthStore.getToken('openai_codex');
+        if (!token) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'codex',
+            action: 'status',
+            success: true,
+            message: 'Codex OAuth status: not connected.',
+          });
+          return;
+        }
+
+        const expiresAt = new Date(token.expiresAt).toISOString();
+        const accountId = token.accountId ? maskValue(token.accountId) : 'unknown';
         sendAuthResponse({
           type: 'auth-response',
           chatId: req.chatId,
           service: 'codex',
           action: 'status',
           success: true,
-          message: 'Codex OAuth status: not connected.',
+          message:
+            `Codex OAuth status: connected\n` +
+            `Account: ${accountId}\n` +
+            `Token expires: ${expiresAt}`,
         });
-        return;
-      }
+      } else if (req.service === 'google') {
+        if (!oauthStore) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'google',
+            action: 'status',
+            success: false,
+            message: 'OAuth store is not available.',
+          });
+          return;
+        }
 
-      const expiresAt = new Date(token.expiresAt).toISOString();
-      const accountId = token.accountId ? maskValue(token.accountId) : 'unknown';
-      sendAuthResponse({
-        type: 'auth-response',
-        chatId: req.chatId,
-        service: 'codex',
-        action: 'status',
-        success: true,
-        message:
-          `Codex OAuth status: connected\n` +
-          `Account: ${accountId}\n` +
-          `Token expires: ${expiresAt}`,
-      });
+        const gmailToken = oauthStore.getToken('gmail');
+        const calendarToken = oauthStore.getToken('calendar');
+
+        if (!gmailToken && !calendarToken) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'google',
+            action: 'status',
+            success: true,
+            message: 'Google status: not connected.',
+          });
+          return;
+        }
+
+        const token = gmailToken ?? calendarToken;
+        const expiresAt = new Date(token!.expiresAt).toISOString();
+        const services = [
+          gmailToken ? 'Gmail' : null,
+          calendarToken ? 'Calendar' : null,
+        ].filter(Boolean).join(', ');
+
+        sendAuthResponse({
+          type: 'auth-response',
+          chatId: req.chatId,
+          service: 'google',
+          action: 'status',
+          success: true,
+          message:
+            `Google status: connected\n` +
+            `Services: ${services}\n` +
+            `Token expires: ${expiresAt}`,
+        });
+      } else {
+        sendAuthResponse({
+          type: 'auth-response',
+          chatId: req.chatId,
+          service: req.service,
+          action: 'status',
+          success: false,
+          message: 'Unsupported auth service.',
+        });
+      }
       return;
     }
 
     if (raw['type'] === 'auth-disconnect') {
       const req = data as AuthDisconnectRequest;
-      if (req.service !== 'codex') {
+
+      if (req.service === 'codex') {
+        if (!codexOAuthService) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'codex',
+            action: 'disconnect',
+            success: false,
+            message: 'Codex OAuth is not configured.',
+          });
+          return;
+        }
+
+        const removed = codexOAuthService.disconnect();
+        sendAuthResponse({
+          type: 'auth-response',
+          chatId: req.chatId,
+          service: 'codex',
+          action: 'disconnect',
+          success: removed,
+          message: removed
+            ? 'Codex OAuth token removed. Reconnect with /connect codex when needed.'
+            : 'No Codex OAuth token was stored.',
+        });
+      } else if (req.service === 'google') {
+        if (!googleOAuthService) {
+          sendAuthResponse({
+            type: 'auth-response',
+            chatId: req.chatId,
+            service: 'google',
+            action: 'disconnect',
+            success: false,
+            message: 'Google OAuth is not configured.',
+          });
+          return;
+        }
+
+        const removed = googleOAuthService.disconnect();
+        // Rebuild tool list to remove Gmail/Calendar tools
+        if (gmailService && calendarService && githubService) {
+          orchestrator.setServices(gmailService, calendarService, githubService);
+        }
+        sendAuthResponse({
+          type: 'auth-response',
+          chatId: req.chatId,
+          service: 'google',
+          action: 'disconnect',
+          success: removed,
+          message: removed
+            ? 'Google tokens removed. Gmail and Calendar tools are no longer available. Reconnect with /connect google when needed.'
+            : 'No Google OAuth tokens were stored.',
+        });
+      } else {
         sendAuthResponse({
           type: 'auth-response',
           chatId: req.chatId,
@@ -617,32 +794,7 @@ async function main(): Promise<void> {
           success: false,
           message: 'Unsupported auth service.',
         });
-        return;
       }
-
-      if (!codexOAuthService) {
-        sendAuthResponse({
-          type: 'auth-response',
-          chatId: req.chatId,
-          service: 'codex',
-          action: 'disconnect',
-          success: false,
-          message: 'Codex OAuth is not configured.',
-        });
-        return;
-      }
-
-      const removed = codexOAuthService.disconnect();
-      sendAuthResponse({
-        type: 'auth-response',
-        chatId: req.chatId,
-        service: 'codex',
-        action: 'disconnect',
-        success: removed,
-        message: removed
-          ? 'Codex OAuth token removed. Reconnect with /connect codex when needed.'
-          : 'No Codex OAuth token was stored.',
-      });
       return;
     }
 
@@ -861,6 +1013,9 @@ async function main(): Promise<void> {
     memoryStore.close();
     if (codexOAuthService) {
       await codexOAuthService.stop();
+    }
+    if (googleOAuthService) {
+      await googleOAuthService.stop();
     }
     if (oauthStore) oauthStore.close();
     process.exit(0);

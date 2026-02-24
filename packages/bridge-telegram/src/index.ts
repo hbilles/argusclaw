@@ -54,6 +54,7 @@ import type {
   HeartbeatToggleResponse,
   HeartbeatTriggered,
   // Phase 9
+  AuthServiceName,
   AuthConnectRequest,
   AuthStatusRequest,
   AuthDisconnectRequest,
@@ -296,7 +297,8 @@ bot.command('connect', async (ctx) => {
       [
         '🔐 Usage:',
         '`/connect codex`',
-        '`/connect codex callback <url-or-code>`',
+        '`/connect google`',
+        '`/connect <service> callback <url\\-or\\-code>`',
       ].join('\n'),
       { parse_mode: 'MarkdownV2' },
     );
@@ -305,8 +307,9 @@ bot.command('connect', async (ctx) => {
 
   const parts = args.split(/\s+/);
   const service = parts[0]?.toLowerCase();
-  if (service !== 'codex') {
-    await ctx.reply('⚠️ Supported auth service: `codex`', { parse_mode: 'MarkdownV2' });
+  const validServices: AuthServiceName[] = ['codex', 'google'];
+  if (!service || !validServices.includes(service as AuthServiceName)) {
+    await ctx.reply('⚠️ Supported auth services: `codex`, `google`', { parse_mode: 'MarkdownV2' });
     return;
   }
 
@@ -317,7 +320,7 @@ bot.command('connect', async (ctx) => {
 
   if (parts[1]?.toLowerCase() === 'callback' && !callbackInput) {
     await ctx.reply(
-      '⚠️ Usage: `/connect codex callback <url-or-code>`',
+      `⚠️ Usage: \`/connect ${service} callback <url\\-or\\-code>\``,
       { parse_mode: 'MarkdownV2' },
     );
     return;
@@ -327,29 +330,30 @@ bot.command('connect', async (ctx) => {
     type: 'auth-connect',
     userId,
     chatId,
-    service: 'codex',
+    service: service as AuthServiceName,
     callbackInput,
   };
 
   if (socketClient.connected) {
     socketClient.send(request);
-    console.log('[bridge-telegram] Sent auth-connect request for codex');
+    console.log(`[bridge-telegram] Sent auth-connect request for ${service}`);
   } else {
     await ctx.reply('Sorry, I\'m not connected to the gateway right now.');
   }
 });
 
 /**
- * /auth_status codex
+ * /auth_status <service>
  */
 bot.command('auth_status', async (ctx) => {
   const userId = ctx.from?.id.toString();
   if (!userId || !ALLOWED_USER_IDS.has(userId)) return;
 
   const chatId = ctx.chat.id.toString();
-  const service = (ctx.match ?? 'codex').trim().toLowerCase();
-  if (service !== 'codex') {
-    await ctx.reply('⚠️ Supported auth service: `codex`', { parse_mode: 'MarkdownV2' });
+  const service = (ctx.match ?? '').trim().toLowerCase() || 'codex';
+  const validServices: AuthServiceName[] = ['codex', 'google'];
+  if (!validServices.includes(service as AuthServiceName)) {
+    await ctx.reply('⚠️ Supported auth services: `codex`, `google`', { parse_mode: 'MarkdownV2' });
     return;
   }
 
@@ -357,19 +361,19 @@ bot.command('auth_status', async (ctx) => {
     type: 'auth-status',
     userId,
     chatId,
-    service: 'codex',
+    service: service as AuthServiceName,
   };
 
   if (socketClient.connected) {
     socketClient.send(request);
-    console.log('[bridge-telegram] Sent auth-status request for codex');
+    console.log(`[bridge-telegram] Sent auth-status request for ${service}`);
   } else {
     await ctx.reply('Sorry, I\'m not connected to the gateway right now.');
   }
 });
 
 /**
- * /disconnect codex
+ * /disconnect <service>
  */
 bot.command('disconnect', async (ctx) => {
   const userId = ctx.from?.id.toString();
@@ -377,8 +381,9 @@ bot.command('disconnect', async (ctx) => {
 
   const chatId = ctx.chat.id.toString();
   const service = (ctx.match ?? '').trim().toLowerCase();
-  if (service !== 'codex') {
-    await ctx.reply('⚠️ Usage: `/disconnect codex`', { parse_mode: 'MarkdownV2' });
+  const validServices: AuthServiceName[] = ['codex', 'google'];
+  if (!service || !validServices.includes(service as AuthServiceName)) {
+    await ctx.reply('⚠️ Usage: `/disconnect codex` or `/disconnect google`', { parse_mode: 'MarkdownV2' });
     return;
   }
 
@@ -386,12 +391,12 @@ bot.command('disconnect', async (ctx) => {
     type: 'auth-disconnect',
     userId,
     chatId,
-    service: 'codex',
+    service: service as AuthServiceName,
   };
 
   if (socketClient.connected) {
     socketClient.send(request);
-    console.log('[bridge-telegram] Sent auth-disconnect request for codex');
+    console.log(`[bridge-telegram] Sent auth-disconnect request for ${service}`);
   } else {
     await ctx.reply('Sorry, I\'m not connected to the gateway right now.');
   }

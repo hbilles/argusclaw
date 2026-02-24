@@ -47,9 +47,14 @@ export interface EmailFull {
 
 export class GmailService {
   private oauthStore: OAuthStore;
+  private googleConfig?: { clientId: string; clientSecret: string };
 
-  constructor(oauthStore: OAuthStore) {
+  constructor(
+    oauthStore: OAuthStore,
+    googleConfig?: { clientId: string; clientSecret: string },
+  ) {
     this.oauthStore = oauthStore;
+    this.googleConfig = googleConfig;
   }
 
   /**
@@ -65,25 +70,32 @@ export class GmailService {
   private getClient(): gmail_v1.Gmail {
     const tokenData = this.oauthStore.getToken('gmail');
     if (!tokenData) {
-      throw new Error('Gmail not connected. Use /connect gmail to set up.');
+      throw new Error('Gmail not connected. Use /connect google to set up.');
     }
 
-    const oauth2Client = new google.auth.OAuth2();
+    const oauth2Client = new google.auth.OAuth2(
+      this.googleConfig?.clientId,
+      this.googleConfig?.clientSecret,
+    );
     oauth2Client.setCredentials({
       access_token: tokenData.accessToken,
       refresh_token: tokenData.refreshToken,
       token_type: tokenData.tokenType,
+      expiry_date: tokenData.expiresAt,
     });
 
-    // Handle token refresh
+    // Handle token refresh — update both gmail and calendar stores to keep in sync
     oauth2Client.on('tokens', (tokens) => {
       if (tokens.access_token) {
-        this.oauthStore.storeToken('gmail', {
+        const updated = {
           ...tokenData,
           accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token ?? tokenData.refreshToken,
           expiresAt: tokens.expiry_date || Date.now() + 3600000,
-        });
-        console.log('[gmail] Token refreshed');
+        };
+        this.oauthStore.storeToken('gmail', updated);
+        this.oauthStore.storeToken('calendar', updated);
+        console.log('[gmail] Token refreshed and stored');
       }
     });
 

@@ -299,6 +299,23 @@ export function loadConfig(configPath?: string): ArgusClawConfig {
     }
   }
 
+  if (config.oauth?.google) {
+    const googleOauth = config.oauth.google;
+
+    if (!googleOauth.clientId || googleOauth.clientId.trim().length === 0) {
+      throw new Error('Configuration missing: oauth.google.clientId');
+    }
+    if (!googleOauth.clientSecret || googleOauth.clientSecret.trim().length === 0) {
+      throw new Error('Configuration missing: oauth.google.clientSecret');
+    }
+    if (!googleOauth.callbackPort) {
+      googleOauth.callbackPort = 9876;
+    }
+    if (googleOauth.callbackPort < 1 || googleOauth.callbackPort > 65535) {
+      throw new Error('Configuration invalid: oauth.google.callbackPort must be 1-65535');
+    }
+  }
+
   // Defaults for Phase 8 (MCP servers)
   if (!config.mcpServers) {
     config.mcpServers = [];

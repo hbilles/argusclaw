@@ -48,6 +48,7 @@ import type {
   HeartbeatToggleResponse,
   HeartbeatTriggered,
   // Phase 9
+  AuthServiceName,
   AuthConnectRequest,
   AuthStatusRequest,
   AuthDisconnectRequest,
@@ -290,17 +291,18 @@ app.command('/argus_connect', async ({ command, ack }) => {
   if (!args) {
     await app.client.chat.postMessage({
       channel: command.channel_id,
-      text: ':lock: Usage:\n`/argus_connect codex`\n`/argus_connect codex callback <url-or-code>`',
+      text: ':lock: Usage:\n`/argus_connect codex`\n`/argus_connect google`\n`/argus_connect <service> callback <url-or-code>`',
     });
     return;
   }
 
   const parts = args.split(/\s+/);
   const service = parts[0]?.toLowerCase();
-  if (service !== 'codex') {
+  const validServices: AuthServiceName[] = ['codex', 'google'];
+  if (!service || !validServices.includes(service as AuthServiceName)) {
     await app.client.chat.postMessage({
       channel: command.channel_id,
-      text: ':warning: Supported auth service: `codex`',
+      text: ':warning: Supported auth services: `codex`, `google`',
     });
     return;
   }
@@ -313,7 +315,7 @@ app.command('/argus_connect', async ({ command, ack }) => {
   if (parts[1]?.toLowerCase() === 'callback' && !callbackInput) {
     await app.client.chat.postMessage({
       channel: command.channel_id,
-      text: ':warning: Usage: `/argus_connect codex callback <url-or-code>`',
+      text: `:warning: Usage: \`/argus_connect ${service} callback <url-or-code>\``,
     });
     return;
   }
@@ -322,13 +324,13 @@ app.command('/argus_connect', async ({ command, ack }) => {
     type: 'auth-connect',
     userId,
     chatId,
-    service: 'codex',
+    service: service as AuthServiceName,
     callbackInput,
   };
 
   if (socketClient.connected) {
     socketClient.send(request);
-    console.log('[bridge-slack] Sent auth-connect request for codex');
+    console.log(`[bridge-slack] Sent auth-connect request for ${service}`);
   } else {
     await app.client.chat.postMessage({
       channel: command.channel_id,
@@ -346,11 +348,12 @@ app.command('/argus_auth_status', async ({ command, ack }) => {
   if (!SLACK_ALLOWED_USER_IDS.has(userId)) return;
 
   const chatId = slackChatId(command.channel_id);
-  const service = (command.text ?? 'codex').trim().toLowerCase();
-  if (service !== 'codex') {
+  const service = (command.text ?? '').trim().toLowerCase() || 'codex';
+  const validServices: AuthServiceName[] = ['codex', 'google'];
+  if (!validServices.includes(service as AuthServiceName)) {
     await app.client.chat.postMessage({
       channel: command.channel_id,
-      text: ':warning: Supported auth service: `codex`',
+      text: ':warning: Supported auth services: `codex`, `google`',
     });
     return;
   }
@@ -359,12 +362,12 @@ app.command('/argus_auth_status', async ({ command, ack }) => {
     type: 'auth-status',
     userId,
     chatId,
-    service: 'codex',
+    service: service as AuthServiceName,
   };
 
   if (socketClient.connected) {
     socketClient.send(request);
-    console.log('[bridge-slack] Sent auth-status request for codex');
+    console.log(`[bridge-slack] Sent auth-status request for ${service}`);
   } else {
     await app.client.chat.postMessage({
       channel: command.channel_id,
@@ -383,10 +386,11 @@ app.command('/argus_disconnect', async ({ command, ack }) => {
 
   const chatId = slackChatId(command.channel_id);
   const service = (command.text ?? '').trim().toLowerCase();
-  if (service !== 'codex') {
+  const validServices: AuthServiceName[] = ['codex', 'google'];
+  if (!service || !validServices.includes(service as AuthServiceName)) {
     await app.client.chat.postMessage({
       channel: command.channel_id,
-      text: ':warning: Usage: `/argus_disconnect codex`',
+      text: ':warning: Usage: `/argus_disconnect codex` or `/argus_disconnect google`',
     });
     return;
   }
@@ -395,12 +399,12 @@ app.command('/argus_disconnect', async ({ command, ack }) => {
     type: 'auth-disconnect',
     userId,
     chatId,
-    service: 'codex',
+    service: service as AuthServiceName,
   };
 
   if (socketClient.connected) {
     socketClient.send(request);
-    console.log('[bridge-slack] Sent auth-disconnect request for codex');
+    console.log(`[bridge-slack] Sent auth-disconnect request for ${service}`);
   } else {
     await app.client.chat.postMessage({
       channel: command.channel_id,

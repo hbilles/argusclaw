@@ -89,7 +89,8 @@ argusclaw/
 │   │       │   ├── gmail.ts         # Gmail API (search, read, send, reply)
 │   │       │   ├── calendar.ts      # Google Calendar API (list, create, update)
 │   │       │   ├── github.ts        # GitHub API (repos, issues, PRs, file read)
-│   │       │   └── oauth.ts         # OAuth flow + encrypted token storage
+│   │       │   ├── oauth.ts         # Encrypted token storage (AES-256-GCM in SQLite)
+│   │       │   └── google-oauth.ts  # Google OAuth flow (Gmail + Calendar consent)
 │   │       └── mcp/
 │   │           ├── index.ts         # Barrel export
 │   │           ├── proxy.ts         # HTTP CONNECT proxy with domain filtering
@@ -441,6 +442,10 @@ Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only
 | `/sessions` | Show active and recent task sessions |
 | `/stop` | Cancel the current multi-step task |
 | `/heartbeats` | List and toggle heartbeat schedules |
+| `/connect google` | Start Google OAuth login (Gmail + Calendar) |
+| `/connect google callback <url-or-code>` | Complete Google OAuth login manually |
+| `/auth_status google` | Show Google connection status |
+| `/disconnect google` | Remove stored Google OAuth tokens |
 | `/connect codex` | Start Codex OAuth login |
 | `/connect codex callback <url-or-code>` | Complete Codex OAuth login manually |
 | `/auth_status codex` | Show Codex OAuth connection status |
@@ -460,6 +465,7 @@ Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only
 | `/argus_stop` | Cancel the current multi-step task |
 | `/argus_heartbeats` | List and toggle heartbeat schedules |
 | `/argus_connect <service>` | Start OAuth login |
+| `/argus_connect <service> callback <url-or-code>` | Complete OAuth login manually |
 | `/argus_auth_status <service>` | Check OAuth connection status |
 | `/argus_disconnect <service>` | Remove stored OAuth token |
 
@@ -474,18 +480,26 @@ Available at `http://127.0.0.1:3333` when the gateway is running (localhost-only
 
 ### OAuth Setup (optional)
 
-To enable service integrations and Codex OAuth:
+To enable service integrations:
 
-1. Configure the relevant credentials in `config/argusclaw.yaml` under `oauth`:
-   - `oauth.google` / `oauth.github` for service tools
-   - `oauth.openaiCodex.clientId` for Codex OAuth mode
-2. Set a strong `OAUTH_KEY` (or macOS Keychain entry) for token encryption-at-rest.
-3. If using Codex OAuth, set `llm.codexAuthMode: oauth` and `llm.model` to a Codex model ID (for example `gpt-5-codex` or `gpt-5.3-codex`).
-   - ChatGPT OAuth mode accepts Codex-family model IDs only; non-Codex IDs (and sometimes `codex-mini-latest`) are rejected.
-4. Start ArgusClaw, then run `/connect codex` (Telegram) or `/argus_connect codex` (Slack) and open the returned URL.
-5. If callback routing is blocked (e.g., VPS/remote browser), copy the final redirected URL and run:
-   - Telegram: `/connect codex callback <url-or-code>`
-   - Slack: `/argus_disconnect codex` then `/argus_connect codex` with the URL
+1. Set a strong `OAUTH_KEY` in `.env` (or store in macOS Keychain) for token encryption-at-rest.
+2. Configure the relevant credentials in `config/argusclaw.yaml` under `oauth`.
+3. Start ArgusClaw and use `/connect <service>` to authenticate.
+
+**Google (Gmail + Calendar)** — For detailed setup instructions, see [`docs/google-oauth-setup.md`](docs/google-oauth-setup.md).
+
+1. Create a Google Cloud project and enable the Gmail and Calendar APIs.
+2. Create OAuth 2.0 credentials (Desktop app type) and add `http://localhost:9876/auth/google/callback` as a redirect URI.
+3. Add `oauth.google.clientId` and `oauth.google.clientSecret` to `config/argusclaw.yaml`.
+4. Run `/connect google` (Telegram) or `/argus_connect google` (Slack) and open the returned URL.
+5. If callback routing is blocked, copy the redirected URL and run `/connect google callback <url-or-code>` (Telegram) or `/argus_connect google callback <url-or-code>` (Slack).
+
+**Codex OAuth** (for OpenAI Codex LLM provider):
+
+1. Set `llm.codexAuthMode: oauth` and `llm.model` to a Codex model ID (e.g., `gpt-5-codex`).
+2. Add `oauth.openaiCodex.clientId` to `config/argusclaw.yaml`.
+3. Run `/connect codex` (Telegram) or `/argus_connect codex` (Slack) and open the returned URL.
+4. If callback routing is blocked, copy the redirected URL and run `/connect codex callback <url-or-code>` (Telegram) or `/argus_connect codex callback <url-or-code>` (Slack).
 
 ## Tech Stack
 

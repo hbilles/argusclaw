@@ -262,7 +262,7 @@ export interface HeartbeatTriggered {
 // Phase 9: Auth Control Protocol
 // ---------------------------------------------------------------------------
 
-export type AuthServiceName = 'codex';
+export type AuthServiceName = 'codex' | 'google';
 
 /** Auth connect request — bridge asks gateway to start or complete OAuth login. */
 export interface AuthConnectRequest {
