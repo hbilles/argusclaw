@@ -143,7 +143,8 @@ argusclaw/
 │   ├── soul.md                  # Local soul identity file (gitignored)
 │   ├── skills.example/          # Committed example skills
 │   │   ├── git-workflow/SKILL.md
-│   │   └── code-review/SKILL.md
+│   │   ├── code-review/SKILL.md
+│   │   └── humanizer/SKILL.md
 │   └── skills/                  # Local skills directory (gitignored)
 ├── docker-compose.yml        # Gateway + Bridges as services; executors built but not run
 ├── .env.example              # Required environment variables
