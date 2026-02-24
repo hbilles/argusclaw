@@ -81,6 +81,7 @@ export class GoogleOAuthService {
     process.env['OAUTH_CALLBACK_BIND_HOST'] ||
     (isRunningInContainer() ? '0.0.0.0' : '127.0.0.1');
   private onAsyncStatus?: (chatId: string, message: string) => void;
+  private onConnected?: () => void;
 
   constructor(
     oauthStore: OAuthStore,
@@ -90,6 +91,15 @@ export class GoogleOAuthService {
     this.oauthStore = oauthStore;
     this.config = config;
     this.onAsyncStatus = onAsyncStatus;
+  }
+
+  /**
+   * Register a callback invoked after tokens are stored via the HTTP callback
+   * server. Used to rebuild the orchestrator tool list so Gmail/Calendar tools
+   * become available without a restart.
+   */
+  setOnConnected(cb: () => void): void {
+    this.onConnected = cb;
   }
 
   /**
@@ -363,6 +373,7 @@ export class GoogleOAuthService {
       );
       this.storeTokenForBothServices(tokenData);
       this.clearPendingState(state);
+      this.onConnected?.();
     } catch (err) {
       pending.inProgress = false;
       throw err;

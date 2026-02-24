@@ -610,6 +610,13 @@ export class Orchestrator {
       this.allTools.push(...mcpTools);
     }
 
+    // Keep the prompt builder in sync so the system prompt reflects reality.
+    this.promptBuilder?.setConnectedServices({
+      gmail: !!this.gmailService?.isConnected(),
+      calendar: !!this.calendarService?.isConnected(),
+      github: !!this.githubService?.isConnected(),
+    });
+
     console.log(`[orchestrator] ${this.allTools.length} tools available`);
   }
 

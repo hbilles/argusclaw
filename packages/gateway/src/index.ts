@@ -240,6 +240,14 @@ async function main(): Promise<void> {
     orchestrator.setServices(gmailService, calendarService, githubService);
   }
 
+  // Rebuild the tool list when Google OAuth completes via the HTTP callback
+  // server (the automatic localhost redirect path).
+  if (googleOAuthService && gmailService && calendarService && githubService) {
+    googleOAuthService.setOnConnected(() => {
+      orchestrator.setServices(gmailService!, calendarService!, githubService!);
+    });
+  }
+
   // Phase 7: Initialize DomainManager for dynamic domain whitelisting
   const domainManager = new DomainManager(config);
   hitlGate.setDomainManager(domainManager);
@@ -586,10 +594,6 @@ async function main(): Promise<void> {
         try {
           if (req.callbackInput && req.callbackInput.trim().length > 0) {
             await googleOAuthService.completeFromCallbackInput(req.userId, req.callbackInput);
-            // Rebuild tool list so Gmail/Calendar tools appear immediately
-            if (gmailService && calendarService && githubService) {
-              orchestrator.setServices(gmailService, calendarService, githubService);
-            }
             sendAuthResponse({
               type: 'auth-response',
               chatId: req.chatId,

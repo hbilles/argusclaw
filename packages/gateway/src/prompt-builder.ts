@@ -29,10 +29,17 @@ const MEMORY_CHAR_BUDGET = 8000;
 // Prompt Builder
 // ---------------------------------------------------------------------------
 
+export interface ConnectedServices {
+  gmail: boolean;
+  calendar: boolean;
+  github: boolean;
+}
+
 export class PromptBuilder {
   private memoryStore: MemoryStore;
   private soulManager: SoulManager | null = null;
   private skillsManager: SkillsManager | null = null;
+  private connectedServices: ConnectedServices = { gmail: false, calendar: false, github: false };
 
   constructor(memoryStore: MemoryStore) {
     this.memoryStore = memoryStore;
@@ -46,6 +53,11 @@ export class PromptBuilder {
   /** Attach the SkillsManager for skill-aware prompts. */
   setSkillsManager(skillsManager: SkillsManager): void {
     this.skillsManager = skillsManager;
+  }
+
+  /** Update connected service status (called when services connect/disconnect). */
+  setConnectedServices(services: ConnectedServices): void {
+    this.connectedServices = services;
   }
 
   /**
@@ -153,16 +165,7 @@ export class PromptBuilder {
     }
 
     // Tools section
-    sections.push(
-      '## Tools\n' +
-      'You have access to tools for file operations and shell commands. All operations run in ' +
-      'sandboxed containers. Some operations require user approval — if a tool call is rejected, ' +
-      'acknowledge it and adjust your plan.\n\n' +
-      'File paths should use the following mount points:\n' +
-      '- /workspace — maps to the user\'s projects directory\n' +
-      '- /documents — maps to the user\'s Documents directory (read-only)\n' +
-      '- /sandbox — maps to the user\'s sandbox directory (read-write)',
-    );
+    sections.push(this.buildToolsSection());
 
     // Memory instruction
     sections.push(
@@ -259,15 +262,7 @@ export class PromptBuilder {
     if (sessionSection) sections.push(sessionSection);
 
     // Tools section
-    sections.push(
-      '## Tools\n' +
-      'You have access to tools for file operations, shell commands, and memory management. ' +
-      'All operations run in sandboxed containers.\n\n' +
-      'File paths should use the following mount points:\n' +
-      '- /workspace — maps to the user\'s projects directory\n' +
-      '- /documents — maps to the user\'s Documents directory (read-only)\n' +
-      '- /sandbox — maps to the user\'s sandbox directory (read-write)',
-    );
+    sections.push(this.buildToolsSection());
 
     // Continuation instruction
     sections.push(
@@ -286,6 +281,29 @@ export class PromptBuilder {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  private buildToolsSection(): string {
+    let section =
+      '## Tools\n' +
+      'You have access to tools for file operations, shell commands, memory management, ' +
+      'and web browsing. Some operations require user approval — if a tool call is rejected, ' +
+      'acknowledge it and adjust your plan.\n\n' +
+      'File paths should use the following mount points:\n' +
+      '- /workspace — maps to the user\'s projects directory\n' +
+      '- /documents — maps to the user\'s Documents directory (read-only)\n' +
+      '- /sandbox — maps to the user\'s sandbox directory (read-write)';
+
+    const svc = this.connectedServices;
+    if (svc.gmail || svc.calendar || svc.github) {
+      const active: string[] = [];
+      if (svc.gmail) active.push('Gmail (search_email, read_email, send_email, reply_email)');
+      if (svc.calendar) active.push('Google Calendar (list_events, create_event, update_event)');
+      if (svc.github) active.push('GitHub (search_repos, list_issues, create_issue, create_pr, read_file_github)');
+      section += '\n\n**Connected services (live now):**\n' + active.map(s => `- ${s}`).join('\n');
+    }
+
+    return section;
+  }
 
   private formatMemorySection(title: string, memories: Memory[], charBudget: number): string | null {
     if (memories.length === 0) return null;
