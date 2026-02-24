@@ -8,6 +8,7 @@ import type { ArgusClawConfig } from '../config.js';
 import { AnthropicProvider } from './anthropic.js';
 import { CodexProvider } from './codex.js';
 import { OpenAIProvider } from './openai.js';
+import { GeminiProvider } from './gemini.js';
 
 export function createLLMProvider(
   config: ArgusClawConfig,
@@ -22,6 +23,9 @@ export function createLLMProvider(
   switch (provider) {
     case 'anthropic':
       return new AnthropicProvider();
+
+    case 'gemini':
+      return new GeminiProvider();
 
     case 'openai':
       return new OpenAIProvider({
@@ -57,7 +61,7 @@ export function createLLMProvider(
     default:
       throw new Error(
         `Unknown LLM provider: "${provider}". ` +
-          'Supported providers: anthropic, openai, lmstudio, codex',
+        'Supported providers: anthropic, openai, lmstudio, codex, gemini',
       );
   }
 }

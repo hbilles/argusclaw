@@ -2,7 +2,12 @@
 # Phase 6: Multi-provider LLM support
 
 # LLM provider configuration.
-# Supported providers: anthropic, openai, lmstudio, codex
+# Supported providers: anthropic, openai, lmstudio, codex, gemini
+#
+# Gemini:
+#   provider: gemini
+#   model: gemini-2.5-flash
+#   Requires GEMINI_API_KEY env var.
 #
 # Anthropic (default):
 #   provider: anthropic

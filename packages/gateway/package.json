@@ -13,9 +13,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@argusclaw/shared": "*",
+    "@google/genai": "^1.42.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@octokit/rest": "^21.0.0",
-    "@argusclaw/shared": "*",
     "better-sqlite3": "^11.0.0",
     "cron-parser": "^4.9.0",
     "dockerode": "^4.0.9",

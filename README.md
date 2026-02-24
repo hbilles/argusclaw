@@ -349,7 +349,7 @@ Controls the entire system:
 
 `config/argusclaw.yaml` is local runtime config (gitignored). Start from `config/argusclaw.example.yaml`.
 
-- **`llm`** — Provider, model, and token limits. Supported providers: `anthropic` (default), `openai`, `lmstudio`, `codex`. The Codex provider uses OpenAI's Responses API and supports optional `reasoningEffort` and `codexAuthMode` (`api-key` or `oauth`). In `oauth` mode, use a Codex model ID (for example `gpt-5-codex`, `gpt-5.1-codex`, `gpt-5.2-codex`, or `gpt-5.3-codex`).
+- **`llm`** — Provider, model, and token limits. Supported providers: `anthropic` (default), `openai`, `lmstudio`, `codex`, `gemini`. The Codex provider uses OpenAI's Responses API and supports optional `reasoningEffort` and `codexAuthMode` (`api-key` or `oauth`). In `oauth` mode, use a Codex model ID (for example `gpt-5-codex`, `gpt-5.1-codex`, `gpt-5.2-codex`, or `gpt-5.3-codex`).
 - **`executors`** — Per-executor image, memory/CPU limits, timeouts, output caps. The web executor also specifies its domain allowlist and `resultFormat` (`structured` or `legacy`) here.
 - **`mounts`** — Host directory → container path mappings with read/write permissions. These define what the file and shell executors can see.
 - **`actionTiers`** — HITL classification rules. Ordered lists of tool + condition patterns for `autoApprove`, `notify`, and `requireApproval`.
@@ -369,7 +369,7 @@ Controls the entire system:
   - **Telegram**: A bot token from [@BotFather](https://t.me/botfather)
   - **Slack**: A Slack app with Socket Mode enabled (see `docs/slack-setup.md`)
   - Both can run simultaneously, or either one independently
-- An LLM API key (Anthropic, OpenAI, or none for LM Studio)
+- An LLM API key (Anthropic, OpenAI, Gemini, or none for LM Studio)
 
 ### Setup
 
@@ -507,7 +507,7 @@ To enable service integrations:
 |-------|-----------|
 | Language | TypeScript 5.7, ES2022 |
 | Runtime | Node.js 22+ |
-| LLM | Multi-provider: Anthropic Claude, OpenAI GPT, OpenAI Codex, LM Studio |
+| LLM | Multi-provider: Anthropic Claude, OpenAI GPT, Google Gemini, OpenAI Codex, LM Studio |
 | Bot framework | grammY (Telegram), @slack/bolt (Slack) |
 | Web UI | Alpine.js (vendored, no build step) |
 | Containers | Docker + Docker Compose |
