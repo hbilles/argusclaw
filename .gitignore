@@ -13,6 +13,9 @@ vendor/*/package-lock.json
 # Local runtime config (contains environment-specific values and may contain secrets)
 config/argusclaw.yaml
 
+# Local skills directory (operator-authored, gitignored like config/soul.md)
+config/skills/
+
 # macOS Finder metadata
 .DS_Store
 **/.DS_Store

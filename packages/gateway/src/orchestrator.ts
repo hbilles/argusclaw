@@ -46,6 +46,7 @@ import type { CalendarService } from './services/calendar.js';
 import type { GitHubService } from './services/github.js';
 import type { McpManager } from './mcp/manager.js';
 import type { SoulManager } from './soul.js';
+import type { SkillsManager } from './skills.js';
 
 // ---------------------------------------------------------------------------
 // Tool Definitions (provider-agnostic)
@@ -259,6 +260,33 @@ const SOUL_TOOLS: ToolDefinition[] = [
 
 /** Set of soul tool names. */
 const SOUL_TOOL_NAMES = new Set(SOUL_TOOLS.map((t) => t.name));
+
+// ---------------------------------------------------------------------------
+// Skills Tool
+// ---------------------------------------------------------------------------
+
+const SKILL_TOOLS: ToolDefinition[] = [
+  {
+    name: 'load_skill',
+    description:
+      'Load the full instructions for a skill by name. Use when you need detailed ' +
+      'step-by-step guidance for a task that matches one of your available skills. ' +
+      'Check your Skills section for available skill names.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Exact name of the skill to load (from your skills list)',
+        },
+      },
+      required: ['name'],
+    },
+  },
+];
+
+/** Set of skill tool names (auto-approve, in-process). */
+const SKILL_TOOL_NAMES = new Set(SKILL_TOOLS.map((t) => t.name));
 
 // ---------------------------------------------------------------------------
 // Phase 5: External Service Tools
@@ -489,6 +517,9 @@ export class Orchestrator {
   // Soul identity manager
   private soulManager: SoulManager | null = null;
 
+  // Skills manager
+  private skillsManager: SkillsManager | null = null;
+
   /** All tools available — built dynamically based on connected services. */
   private allTools: ToolDefinition[] = [];
 
@@ -543,6 +574,12 @@ export class Orchestrator {
     this.rebuildToolList();
   }
 
+  /** Attach the SkillsManager for skill tool support. */
+  setSkillsManager(skillsManager: SkillsManager): void {
+    this.skillsManager = skillsManager;
+    this.rebuildToolList();
+  }
+
   /** Rebuild the tool list based on connected services. */
   private rebuildToolList(): void {
     this.allTools = [...EXECUTOR_TOOLS, ...MEMORY_TOOLS, ...WEB_TOOLS];
@@ -560,6 +597,11 @@ export class Orchestrator {
     // Soul identity tool
     if (this.soulManager) {
       this.allTools.push(...SOUL_TOOLS);
+    }
+
+    // Skills tool — only if skills manager is set and has skills
+    if (this.skillsManager && this.skillsManager.getEnabledCount() > 0) {
+      this.allTools.push(...SKILL_TOOLS);
     }
 
     // Phase 8: MCP ecosystem tools
@@ -707,6 +749,25 @@ export class Orchestrator {
           // Memory tools are handled locally, not through HITL or dispatcher
           if (MEMORY_TOOL_NAMES.has(toolCall.name)) {
             const result = this.handleMemoryTool(toolCall.name, input);
+
+            this.auditLogger.logToolResult(sessionId, {
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              tier: 'auto-approve',
+              success: true,
+            });
+
+            toolResults.push({
+              type: 'tool_result',
+              toolCallId: toolCall.id,
+              content: result,
+            });
+            continue;
+          }
+
+          // Skills tool — auto-approve, in-process (read-only local files)
+          if (SKILL_TOOL_NAMES.has(toolCall.name)) {
+            const result = this.handleSkillTool(toolCall.name, input);
 
             this.auditLogger.logToolResult(sessionId, {
               toolCallId: toolCall.id,
@@ -1109,6 +1170,39 @@ export class Orchestrator {
   }
 
   // -------------------------------------------------------------------------
+  // Skill Tool Handling
+  // -------------------------------------------------------------------------
+
+  /**
+   * Handle the load_skill tool.
+   * Returns the full markdown content for the requested skill.
+   */
+  private handleSkillTool(
+    toolName: string,
+    input: Record<string, unknown>,
+  ): string {
+    if (!this.skillsManager) {
+      return 'Skills system is not available.';
+    }
+
+    if (toolName === 'load_skill') {
+      const name = input['name'] as string;
+      if (!name) {
+        return 'Error: name is required.';
+      }
+
+      const content = this.skillsManager.getSkillContent(name);
+      if (!content) {
+        return `Skill not found or unavailable: "${name}". Check your Skills section for available skills.`;
+      }
+
+      return content;
+    }
+
+    return `Unknown skill tool: ${toolName}`;
+  }
+
+  // -------------------------------------------------------------------------
   // Service Tool Handling (Phase 5)
   // -------------------------------------------------------------------------
 
@@ -1380,7 +1474,7 @@ export class Orchestrator {
     let prompt = soulContent
       ? soulContent + '\n\n'
       : 'You are ArgusClaw, a personal AI assistant with the ability to interact with the ' +
-        'filesystem, run shell commands, browse the web, and manage email, calendar, and GitHub.\n\n';
+      'filesystem, run shell commands, browse the web, and manage email, calendar, and GitHub.\n\n';
 
     prompt +=
       'You have access to tools that run in sandboxed Docker containers.\n\n' +

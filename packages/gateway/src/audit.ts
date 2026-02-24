@@ -188,6 +188,19 @@ export class AuditLogger {
     });
   }
 
+  /** Convenience: log a skill-related event (load, tamper, access). */
+  logSkillEvent(
+    type: 'skill_loaded' | 'skill_load_error' | 'skill_tamper_detected' | 'skill_accessed',
+    data: Record<string, unknown>,
+  ): void {
+    this.log({
+      timestamp: new Date(),
+      type,
+      sessionId: 'skills',
+      data,
+    });
+  }
+
   /** Close the current write stream. */
   close(): void {
     if (this.stream) {

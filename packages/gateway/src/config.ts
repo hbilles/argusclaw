@@ -125,6 +125,16 @@ export interface McpServerConfig {
   enabled?: boolean;
 }
 
+/** Configuration for agent skills (operator-authored instruction files). */
+export interface SkillsConfig {
+  /** Directory containing skill folders. Default: ./skills (relative to config dir). */
+  directory?: string;
+  /** Per-skill overrides: enable/disable, override alwaysLoad. */
+  overrides?: Record<string, { enabled?: boolean; alwaysLoad?: boolean }>;
+  /** Max total characters of skill content to inject. Default: 6000. */
+  charBudget?: number;
+}
+
 export interface ArgusClawConfig {
   llm: {
     provider: string;
@@ -168,6 +178,8 @@ export interface ArgusClawConfig {
   mcpServers?: McpServerConfig[];
   /** Path to the SOUL.md identity file (relative to config directory or absolute). */
   soulFile?: string;
+  /** Agent skills configuration (optional). */
+  skills?: SkillsConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +280,7 @@ export function loadConfig(configPath?: string): ArgusClawConfig {
   ) {
     console.warn(
       `[config] WARNING: llm.model "${config.llm.model}" is not a Codex model. ` +
-        'Codex OAuth mode only supports Codex model IDs.',
+      'Codex OAuth mode only supports Codex model IDs.',
     );
   }
 
@@ -345,6 +357,20 @@ export function loadConfig(configPath?: string): ArgusClawConfig {
   config.soulFile = path.resolve(configDir, config.soulFile);
   console.log(`[config] Soul file: ${config.soulFile}`);
 
+  // Resolve skills directory path (relative to config directory)
+  if (config.skills) {
+    const skillsDir = config.skills.directory ?? './skills';
+    config.skills.directory = path.resolve(configDir, skillsDir);
+    if (!fs.existsSync(config.skills.directory)) {
+      console.warn(
+        `[config] WARNING: Skills directory does not exist: ${config.skills.directory}`,
+      );
+      console.warn(
+        `[config]   Create it and add skill folders with SKILL.md files to enable agent skills.`,
+      );
+    }
+  }
+
   console.log(`[config] Configuration loaded:`);
   console.log(`[config]   LLM model: ${config.llm.model}`);
   console.log(`[config]   Mounts: ${config.mounts.map((m) => `${m.name} (${m.hostPath} → ${m.containerPath}${m.readOnly ? ', ro' : ''})`).join(', ')}`);
@@ -361,6 +387,9 @@ export function loadConfig(configPath?: string): ArgusClawConfig {
     console.log(
       `[config]   MCP servers: ${enabledMcp.map((s) => `${s.name} (${s.image}, tier=${s.defaultTier})`).join(', ')}`,
     );
+  }
+  if (config.skills?.directory) {
+    console.log(`[config]   Skills directory: ${config.skills.directory}`);
   }
 
   return config;

@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PromptBuilder } from '../src/prompt-builder.js';
 import type { MemoryStore, Memory, TaskSession } from '../src/memory.js';
 import type { SoulManager } from '../src/soul.js';
+import type { SkillsManager, SkillCatalogEntry } from '../src/skills.js';
 
 describe('PromptBuilder', () => {
   let mockMemoryStore: Partial<MemoryStore>;
   let mockSoulManager: Partial<SoulManager>;
+  let mockSkillsManager: Partial<SkillsManager>;
   let promptBuilder: PromptBuilder;
 
   beforeEach(() => {
@@ -17,6 +19,14 @@ describe('PromptBuilder', () => {
 
     mockSoulManager = {
       getContentSafe: vi.fn().mockReturnValue('Mocked Soul Content.'),
+    };
+
+    mockSkillsManager = {
+      getCatalog: vi.fn().mockReturnValue([
+        { name: 'git-workflow', description: 'Standard git workflow' },
+        { name: 'code-review', description: 'Code review checklist' },
+      ] as SkillCatalogEntry[]),
+      getAlwaysLoadContent: vi.fn().mockReturnValue([]),
     };
 
     promptBuilder = new PromptBuilder(mockMemoryStore as MemoryStore);
@@ -72,6 +82,39 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('Active Task');
       expect(prompt).toContain('Goal');
     });
+
+    it('omits skills section when no skills manager is set', () => {
+      const prompt = promptBuilder.buildSystemPrompt('hello', 'user1');
+      expect(prompt).not.toContain('## Skills');
+      expect(prompt).not.toContain('load_skill');
+    });
+
+    it('includes skills catalog when skills manager is set', () => {
+      promptBuilder.setSkillsManager(mockSkillsManager as SkillsManager);
+      const prompt = promptBuilder.buildSystemPrompt('hello', 'user1');
+      expect(prompt).toContain('## Skills');
+      expect(prompt).toContain('git-workflow');
+      expect(prompt).toContain('Standard git workflow');
+      expect(prompt).toContain('code-review');
+      expect(prompt).toContain('load_skill');
+    });
+
+    it('omits skills section when catalog is empty', () => {
+      mockSkillsManager.getCatalog = vi.fn().mockReturnValue([]);
+      promptBuilder.setSkillsManager(mockSkillsManager as SkillsManager);
+      const prompt = promptBuilder.buildSystemPrompt('hello', 'user1');
+      expect(prompt).not.toContain('## Skills');
+    });
+
+    it('includes alwaysLoad skill content inline', () => {
+      mockSkillsManager.getAlwaysLoadContent = vi.fn().mockReturnValue([
+        { name: 'git-workflow', content: '# Git Workflow\n\nAlways loaded instructions.' },
+      ]);
+      promptBuilder.setSkillsManager(mockSkillsManager as SkillsManager);
+      const prompt = promptBuilder.buildSystemPrompt('hello', 'user1');
+      expect(prompt).toContain('### Skill: git-workflow');
+      expect(prompt).toContain('Always loaded instructions.');
+    });
   });
 
   describe('buildLoopPrompt', () => {
@@ -92,5 +135,22 @@ describe('PromptBuilder', () => {
       expect(prompt).toContain('Loop Step');
       expect(prompt).toContain('done');
     });
+
+    it('includes skills catalog in loop prompt', () => {
+      promptBuilder.setSkillsManager(mockSkillsManager as SkillsManager);
+      const session: TaskSession = {
+        userId: 'user1',
+        originalRequest: 'loop task',
+        status: 'in-progress',
+        iteration: 1,
+        maxIterations: 5,
+        plan: { goal: 'Goal', steps: [], assumptions: [], log: [] },
+      };
+
+      const prompt = promptBuilder.buildLoopPrompt(session, 'user1');
+      expect(prompt).toContain('## Skills');
+      expect(prompt).toContain('git-workflow');
+    });
   });
 });
+

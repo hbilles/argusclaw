@@ -75,6 +75,7 @@ argusclaw/
 │   │       ├── scheduler.ts         # Cron-based heartbeat triggers
 │   │       ├── dashboard.ts         # Web dashboard server (chat API + admin REST + SSE)
 │   │       ├── soul.ts               # Soul identity manager (SHA-256 verified, SQLite versioned)
+│   │       ├── skills.ts            # Skills manager (SHA-256 verified, progressive disclosure)
 │   │       ├── audit.ts             # Append-only JSONL audit logger
 │   │       ├── config.ts            # YAML config loader + validation
 │   │       ├── utils.ts             # Shared utilities (complexity detection, HTTP helpers)
@@ -139,7 +140,11 @@ argusclaw/
 │   ├── argusclaw.example.yaml  # Committed template config
 │   ├── argusclaw.yaml          # Local runtime config (gitignored)
 │   ├── soul.example.md          # Committed soul identity template
-│   └── soul.md                  # Local soul identity file (gitignored)
+│   ├── soul.md                  # Local soul identity file (gitignored)
+│   ├── skills.example/          # Committed example skills
+│   │   ├── git-workflow/SKILL.md
+│   │   └── code-review/SKILL.md
+│   └── skills/                  # Local skills directory (gitignored)
 ├── docker-compose.yml        # Gateway + Bridges as services; executors built but not run
 ├── .env.example              # Required environment variables
 └── package.json              # npm workspaces monorepo root
@@ -222,6 +227,7 @@ The LLM has access to these tools, each routed through the HITL gate:
 | `create_issue` | In-process | Create GitHub issue (requires approval) |
 | `create_pr` | In-process | Create GitHub PR (requires approval) |
 | `propose_soul_update` | In-process | Propose changes to the agent's identity file (always requires approval) |
+| `load_skill` | In-process | Load full instructions for an agent skill by name (auto-approve) |
 
 ### MCP Ecosystem Tools
 
@@ -324,6 +330,16 @@ The agent's personality and behavioral guidelines live in `config/soul.md`, a ma
 
 All soul events (load, tamper detection, update proposals, approvals, rejections) are written to the audit log. Version history is stored in SQLite with full content, rationale, and attribution for each change.
 
+### L7 — Skill Integrity
+
+Agent skills are operator-authored markdown instruction files (`SKILL.md`) that extend the agent's knowledge — coding workflows, deployment procedures, debugging playbooks. They are prompt content only (not executable code), managed by the SkillsManager with the same integrity protections as soul identity:
+
+- **SHA-256 hash verification** — Each skill file is hashed at startup. Every read re-verifies the hash. Tampering triggers an audit event and disables the skill.
+- **File isolation** — Skills must live in the configured `config/skills/` directory. Symlinked directories and files are rejected to prevent path traversal.
+- **No runtime creation** — Skills are operator-authored only. The agent cannot create, modify, or delete skills. The `load_skill` tool is read-only.
+- **Progressive disclosure** — Only skill names and descriptions are in the system prompt by default. Full content is injected only via the `load_skill` tool call or `alwaysLoad` config, keeping the context window lean.
+- **Audit trail** — All skill events (load, tamper detection, access) are logged.
+
 ## Configuration
 
 ### Environment Variables (`.env`)
@@ -355,6 +371,7 @@ Controls the entire system:
 - **`actionTiers`** — HITL classification rules. Ordered lists of tool + condition patterns for `autoApprove`, `notify`, and `requireApproval`.
 - **`trustedDomains`** — Base domains that downgrade `browse_web` from require-approval to notify tier. Additional domains can be approved dynamically at runtime — when the agent visits an unlisted domain, the user is prompted to allow it for the session.
 - **`soulFile`** — Path to the agent's identity file (default: `./soul.md`, relative to config directory). Start from `config/soul.example.md`.
+- **`skills`** — Agent skills configuration. `directory` (default: `./skills`), `charBudget` (max chars to inject, default: 6000), `overrides` (per-skill enable/disable and `alwaysLoad`). See `config/skills.example/` for the SKILL.md format.
 - **`heartbeats`** — Cron schedules for proactive agent triggers with prompt templates. Each heartbeat can optionally specify a `channel` (e.g., `slack:C0123456789`) to target a specific Slack channel.
 - **`oauth`** — Google, GitHub, and Codex OAuth client credentials for service integrations.
 - **`mcpServers`** — MCP server definitions. Each entry specifies a Docker image, command, optional allowed domains (for network access through the proxy), environment variables (`"from_env"` resolves from host env), mounts, resource limits, a `defaultTier` for HITL classification, and tool filters (`includeTools`, `excludeTools`, `maxTools`). Vendored servers (like Fastmail) use `command: node` with an absolute path to the pre-built dist (e.g., `args: ["/opt/fastmail-mcp/dist/index.js"]`), while community packages can still use `command: npx`.
@@ -379,6 +396,7 @@ npm install
 cp .env.example .env
 cp config/argusclaw.example.yaml config/argusclaw.yaml
 cp config/soul.example.md config/soul.md
+cp -r config/skills.example config/skills
 # Edit .env with your tokens and secrets
 # Edit config/argusclaw.yaml to configure mounts and HITL rules
 # Edit config/soul.md to customize the agent's personality and identity

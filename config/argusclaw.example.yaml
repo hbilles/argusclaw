@@ -43,6 +43,42 @@ llm:
   maxTokens: 4096
   codexAuthMode: oauth
 
+soulFile: ./soul.md
+
+# Agent skills — operator-authored markdown instruction files.
+# Skills extend what the agent knows how to do (coding workflows, debugging
+# playbooks, deployment procedures, etc.). They are prompt content only,
+# not executable code.
+#
+# Each skill lives in its own subdirectory with a SKILL.md file:
+#   config/skills/<skill-name>/SKILL.md
+#
+# SKILL.md format:
+#   ---
+#   name: skill-name
+#   description: One-line description of the skill
+#   alwaysLoad: false    # Optional: inject full content into every prompt
+#   ---
+#   [Markdown instructions...]
+#
+# Security:
+# - SHA-256 hash verification on every read (tamper detection)
+# - Files must live in the configured directory (no symlinks)
+# - Read-only at runtime — operator-authored only
+# - All events are audit-logged
+#
+# See config/skills.example/ for example skills.
+skills:
+  directory: ./skills     # Relative to this config file
+  charBudget: 6000        # Max chars of skill content to inject
+  # Per-skill overrides:
+  # overrides:
+  #   git-workflow:
+  #     enabled: true
+  #     alwaysLoad: true
+  #   code-review:
+  #     enabled: false
+
 executors:
   shell:
     image: argusclaw-executor-shell
@@ -139,6 +175,8 @@ actionTiers:
     - tool: mcp_fastmail__get_calendar_event
     - tool: mcp_fastmail__list_identities
     - tool: mcp_fastmail__check_capabilities
+    # Skills tool — reads local operator-authored skill files (read-only)
+    - tool: load_skill
 
   notify:
     - tool: write_file

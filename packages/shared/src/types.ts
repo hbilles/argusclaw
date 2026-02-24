@@ -39,23 +39,27 @@ export interface Session {
 export interface AuditEntry {
   timestamp: Date;
   type:
-    | 'message_received'
-    | 'llm_request'
-    | 'llm_response'
-    | 'message_sent'
-    | 'error'
-    | 'tool_call'
-    | 'tool_result'
-    | 'action_classified'
-    | 'approval_requested'
-    | 'approval_resolved'
-    | 'mcp_proxy'
-    | 'mcp_tool_call'
-    | 'soul_loaded'
-    | 'soul_tamper_detected'
-    | 'soul_update_proposed'
-    | 'soul_update_applied'
-    | 'soul_update_cancelled';
+  | 'message_received'
+  | 'llm_request'
+  | 'llm_response'
+  | 'message_sent'
+  | 'error'
+  | 'tool_call'
+  | 'tool_result'
+  | 'action_classified'
+  | 'approval_requested'
+  | 'approval_resolved'
+  | 'mcp_proxy'
+  | 'mcp_tool_call'
+  | 'soul_loaded'
+  | 'soul_tamper_detected'
+  | 'soul_update_proposed'
+  | 'soul_update_applied'
+  | 'soul_update_cancelled'
+  | 'skill_loaded'
+  | 'skill_load_error'
+  | 'skill_tamper_detected'
+  | 'skill_accessed';
   sessionId: string;
   data: Record<string, unknown>;
 }

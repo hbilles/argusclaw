@@ -61,6 +61,7 @@ import { startDashboard, broadcastSSE } from './dashboard.js';
 // Phase 8: MCP server integration
 import { McpProxy, McpContainerManager, McpManager } from './mcp/index.js';
 import { SoulManager } from './soul.js';
+import { SkillsManager } from './skills.js';
 import { isComplexRequest } from './utils.js';
 
 function maskValue(value: string): string {
@@ -208,7 +209,7 @@ async function main(): Promise<void> {
   ) {
     throw new Error(
       'Codex OAuth mode requires oauth.openaiCodex configuration and a working OAuth store. ' +
-        'Configure oauth.openaiCodex.clientId and OAUTH_KEY, then restart.',
+      'Configure oauth.openaiCodex.clientId and OAUTH_KEY, then restart.',
     );
   }
 
@@ -226,6 +227,13 @@ async function main(): Promise<void> {
 
   // Attach soul manager to the orchestrator
   orchestrator.setSoulManager(soulManager);
+
+  // Attach skills manager (if configured)
+  if (config.skills?.directory) {
+    const skillsManager = new SkillsManager(config.skills.directory, auditLogger, config.skills);
+    orchestrator.setSkillsManager(skillsManager);
+    promptBuilder.setSkillsManager(skillsManager);
+  }
 
   // Wire service tools to orchestrator if available
   if (gmailService && calendarService && githubService) {

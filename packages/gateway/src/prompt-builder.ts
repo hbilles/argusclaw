@@ -16,6 +16,7 @@
 
 import type { MemoryStore, Memory, TaskSession } from './memory.js';
 import type { SoulManager } from './soul.js';
+import type { SkillsManager, SkillCatalogEntry } from './skills.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,6 +32,7 @@ const MEMORY_CHAR_BUDGET = 8000;
 export class PromptBuilder {
   private memoryStore: MemoryStore;
   private soulManager: SoulManager | null = null;
+  private skillsManager: SkillsManager | null = null;
 
   constructor(memoryStore: MemoryStore) {
     this.memoryStore = memoryStore;
@@ -39,6 +41,11 @@ export class PromptBuilder {
   /** Attach the SoulManager for identity-aware prompts. */
   setSoulManager(soulManager: SoulManager): void {
     this.soulManager = soulManager;
+  }
+
+  /** Attach the SkillsManager for skill-aware prompts. */
+  setSkillsManager(skillsManager: SkillsManager): void {
+    this.skillsManager = skillsManager;
   }
 
   /**
@@ -56,6 +63,12 @@ export class PromptBuilder {
       'You are a personal AI assistant called ArgusClaw. You are helpful, concise, and direct. ' +
       'You communicate via Telegram.',
     );
+
+    // Skills catalog (after soul, before memories)
+    const skillsSection = this.formatSkillsSection();
+    if (skillsSection) {
+      sections.push(skillsSection);
+    }
 
     // Retrieve memories by category
     const userMemories = this.memoryStore.getByCategory('user');
@@ -204,6 +217,12 @@ export class PromptBuilder {
       'You communicate via Telegram.',
     );
 
+    // Skills catalog (consistent with standard prompt)
+    const skillsSection = this.formatSkillsSection();
+    if (skillsSection) {
+      sections.push(skillsSection);
+    }
+
     // Include user/preference/environment memories (compact)
     const userMemories = this.memoryStore.getByCategory('user');
     const preferenceMemories = this.memoryStore.getByCategory('preference');
@@ -303,9 +322,9 @@ export class PromptBuilder {
     for (const step of plan.steps) {
       const icon = step.status === 'completed' ? '✅'
         : step.status === 'failed' ? '❌'
-        : step.status === 'skipped' ? '⏭️'
-        : step.status === 'in-progress' ? '🔄'
-        : '⬜';
+          : step.status === 'skipped' ? '⏭️'
+            : step.status === 'in-progress' ? '🔄'
+              : '⬜';
       section += `${icon} ${step.id}. ${step.description}`;
       if (step.result) {
         section += ` — ${step.result}`;
@@ -326,6 +345,36 @@ export class PromptBuilder {
       const recentLogs = plan.log.slice(-5);
       for (const entry of recentLogs) {
         section += `- [iter ${entry.iteration}, step ${entry.step}] ${entry.action}: ${entry.result}\n`;
+      }
+    }
+
+    return section;
+  }
+
+  /**
+   * Format the skills section for prompt injection.
+   * Lists enabled skill names/descriptions, inlines alwaysLoad content.
+   */
+  private formatSkillsSection(): string | null {
+    if (!this.skillsManager) return null;
+
+    const catalog = this.skillsManager.getCatalog();
+    if (catalog.length === 0) return null;
+
+    let section = '## Skills\n';
+    section += 'You have access to the following skills. ';
+    section += 'Use the `load_skill` tool to load full instructions for any skill when needed.\n\n';
+
+    for (const skill of catalog) {
+      section += `- **${skill.name}**: ${skill.description}\n`;
+    }
+
+    // Inline alwaysLoad skills
+    const alwaysLoad = this.skillsManager.getAlwaysLoadContent();
+    if (alwaysLoad.length > 0) {
+      section += '\n';
+      for (const { name, content } of alwaysLoad) {
+        section += `### Skill: ${name}\n${content}\n\n`;
       }
     }
 
